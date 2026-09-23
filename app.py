@@ -1,11 +1,10 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 import io
 import pandas as pd
-from flask import request, redirect, url_for, flash, render_template
 from sqlalchemy import or_
 
 
@@ -482,7 +481,49 @@ def edit_item(item_id):
     flash(f'Device details for {new_serial} updated successfully!')
     return redirect(url_for('report'))
 
+@app.route('/item_history/<int:item_id>')
+@login_required
+def item_history(item_id):
+    item = Item.query.get_or_404(item_id)
+    tx_list = Transaction.query.filter_by(item_id=item.id).order_by(Transaction.timestamp.desc()).all()
+    
+    history_data = []
+    for tx in tx_list:
+        history_data.append({
+            'timestamp': tx.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+            'action': tx.action,
+            'user': tx.user.username if tx.user else 'System',
+            'comment': tx.comment or '-'
+        })
 
+    return jsonify({
+        'serial_number': item.serial_number,
+        'model': f"{item.category_rel.vendor} {item.category_rel.model}",
+        'history': history_data
+    })
+
+
+@app.route('/reenter_item/<int:item_id>', methods=['POST'])
+@login_required
+def reenter_item(item_id):
+    item = Item.query.get_or_404(item_id)
+    comment = request.form.get('comment', 'Re-entered into warehouse stock').strip()
+
+    item.status = 'IN_STOCK'
+    
+    # Record new ENTRANCE event in audit history
+    new_tx = Transaction(
+        item_id=item.id,
+        user_id=current_user.id,
+        action='ENTRANCE',
+        comment=comment
+    )
+    db.session.add(new_tx)
+    db.session.commit()
+
+    flash(f'Item {item.serial_number} successfully re-entered into inventory stock!')
+    return redirect(url_for('report'))
+    
 @app.route('/delete_item/<int:item_id>', methods=['POST'])
 @login_required
 def delete_item(item_id):
