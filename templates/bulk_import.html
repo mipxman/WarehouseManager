@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card" style="max-width: 650px;">
+    <h2>📦 Bulk Serial Number Import</h2>
+    <p style="font-size:13px; color:#555;">Upload a <strong>.txt</strong>, <strong>.csv</strong>, or <strong>.xlsx</strong> file containing serial numbers. The system will parse all serials automatically.</p>
+
+    <form method="POST" enctype="multipart/form-data">
+        <label><strong>Action Type:</strong></label>
+        <select name="action" id="actionSelect" onchange="toggleCategory()">
+            <option value="ENTRANCE">ENTRANCE (Bulk Stock In)</option>
+            <option value="EXIT">EXIT (Bulk Stock Out)</option>
+        </select>
+
+        <label><strong>Select File (.txt, .csv, .xlsx):</strong></label>
+        <input type="file" name="file" accept=".txt,.csv,.xlsx,.xls" required style="background:#f8f9fa; padding:10px;">
+
+        <div id="entrance_fields">
+            <label><strong>Category / Model (Optional - Auto-detects if left blank):</strong></label>
+            <select name="category_id">
+                <option value="">-- Auto-Detect by Vendor Prefix --</option>
+                {% for cat in categories %}
+                <option value="{{ cat.id }}">{{ cat.vendor }} {{ cat.name }} ({{ cat.model }})</option>
+                {% endfor %}
+            </select>
+
+            <label><strong>Assign to Client / Property (Optional):</strong></label>
+            <select name="property_id">
+                <option value="">-- Unassigned / Company Stock --</option>
+                {% for prop in properties %}
+                <option value="{{ prop.id }}">{{ prop.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <label><strong>Batch Comment / Note:</strong></label>
+        <textarea name="comment" rows="2" placeholder="e.g. Packing slip ID 2891813 / Order POIT010063624"></textarea>
+
+        <button type="submit" style="background:#28a745; margin-top:10px;">Upload & Process Bulk Serials</button>
+    </form>
+</div>
+
+<script>
+    function toggleCategory() {
+        var action = document.getElementById('actionSelect').value;
+        var fields = document.getElementById('entrance_fields');
+        fields.style.display = (action === 'ENTRANCE') ? 'block' : 'none';
+    }
+    toggleCategory();
+</script>
+{% endblock %}

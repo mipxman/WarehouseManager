@@ -1,0 +1,204 @@
+{% extends 'base.html' %}
+{% block content %}
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://unpkg.com/tesseract.js@5.0.5/dist/tesseract.min.js"></script>
+
+<div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+        <h2 style="margin:0;">Warehouse Scanner</h2>
+        <a href="{{ url_for('bulk_import') }}" style="background:transparent; border:1px solid #28a745; color:#28a745; padding:8px 14px; text-decoration:none; border-radius:6px; font-size:13px; font-weight:bold;">📂 Upload Bulk File</a>
+    </div>
+
+    <!-- Live Camera Scanner Viewport -->
+    <div style="background: #000; padding: 12px; border-radius: 8px; margin-bottom: 20px; text-align: center;">
+        <div id="reader" style="width: 100%; min-height: 250px; display: none; margin: 0 auto; background:#111;"></div>
+        
+        <div style="margin-top: 10px;">
+            <button type="button" id="start-btn" onclick="startCamera()" style="background: transparent; border:1px solid #28a745; color:#28a745; margin-bottom: 0; width: auto; padding: 10px 20px;">
+                📷 Open Live Camera Scanner
+            </button>
+            <button type="button" id="stop-btn" onclick="stopCamera()" style="background: transparent; border:1px solid #dc3545; color:#dc3545; display: none; margin-bottom: 0; width: auto; padding: 10px 20px;">
+                ⏹️ Stop Camera
+            </button>
+        </div>
+        <p id="camera-status" style="color: #ccc; font-size: 12px; margin-top: 8px; margin-bottom: 0;">
+            Tip: Align <strong>ONLY the Serial Number barcode</strong> inside the target box.
+        </p>
+    </div>
+
+    <!-- Movement Logging Form -->
+    <form method="POST">
+        <label><strong>Action Type:</strong></label>
+        <select name="action" id="actionSelect" onchange="toggleCategory()">
+            <option value="ENTRANCE">ENTRANCE (In Stock)</option>
+            <option value="EXIT">EXIT (Out of Warehouse)</option>
+        </select>
+
+        <label><strong>Serial Number:</strong></label>
+        <div style="display: flex; gap: 8px;">
+            <input type="text" name="serial_number" id="serial_input" required placeholder="Scan or type SN..." style="font-size: 16px; font-weight: bold;">
+            
+            <label style="background: transparent; border:1px solid #17a2b8; color: #17a2b8; padding: 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; font-size: 13px; font-weight: bold; width: auto; margin: 5px 0 12px 0;">
+                🔍 OCR Photo
+                <input type="file" accept="image/*" capture="environment" id="ocrInput" style="display: none;" onchange="fastOCRProcess(this)">
+            </label>
+        </div>
+        <div id="ocr-status" style="font-size: 13px; color: #007bff; font-weight: bold; margin-top: -8px; margin-bottom: 10px;"></div>
+
+        <div id="entrance_fields">
+            <label>Category / Model:</label>
+            <select name="category_id" id="category_select">
+                <option value="">-- Select Model --</option>
+                {% for cat in categories %}
+                <option value="{{ cat.id }}" data-vendor="{{ cat.vendor|lower }}" data-model="{{ cat.model|lower }}">
+                    {{ cat.vendor }} {{ cat.name }} ({{ cat.model }})
+                </option>
+                {% endfor %}
+            </select>
+
+            <label>Assign to Client / Property (Optional):</label>
+            <select name="property_id">
+                <option value="">-- Unassigned / Company Stock --</option>
+                {% for prop in properties %}
+                <option value="{{ prop.id }}">{{ prop.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <label>Comments / Notes:</label>
+        <textarea name="comment" rows="2" placeholder="Write exit or entrance details..."></textarea>
+
+        <button type="submit" style="background: transparent; border:1px solid #007bff; color:#007bff; margin-top: 10px;">Submit Movement</button>
+    </form>
+</div>
+
+<script>
+    let html5QrCode = null;
+
+    function startCamera() {
+        document.getElementById('reader').style.display = 'block';
+        document.getElementById('start-btn').style.display = 'none';
+        document.getElementById('stop-btn').style.display = 'inline-block';
+        document.getElementById('camera-status').innerText = "Initializing back camera stream...";
+
+        if (!html5QrCode) {
+            html5QrCode = new Html5Qrcode("reader");
+        }
+
+        // Enumerate video inputs for mobile device compatibility
+        Html5Qrcode.getCameras().then(devices => {
+            if (devices && devices.length) {
+                // Prefer rear camera
+                let backCamera = devices.find(device => device.label.toLowerCase().includes('back') || device.label.toLowerCase().includes('environment'));
+                let cameraId = backCamera ? backCamera.id : devices[devices.length - 1].id;
+
+                html5QrCode.start(
+                    cameraId,
+                    { fps: 10, qrbox: { width: 260, height: 90 } },
+                    onScanSuccess
+                ).then(() => {
+                    document.getElementById('camera-status').innerText = "Camera Active. Align barcode inside box.";
+                }).catch(err => {
+                    // Fallback to generic constraints if camera ID fails
+                    html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 260, height: 90 } }, onScanSuccess);
+                });
+            }
+        }).catch(err => {
+            alert("Camera Permission Error: Ensure HTTPS is enabled and camera permission is allowed.");
+            stopCamera();
+        });
+    }
+
+    function stopCamera() {
+        if (html5QrCode) {
+            html5QrCode.stop().then(() => {
+                document.getElementById('reader').style.display = 'none';
+                document.getElementById('start-btn').style.display = 'inline-block';
+                document.getElementById('stop-btn').style.display = 'none';
+                document.getElementById('camera-status').innerText = "Tip: Align ONLY the Serial Number barcode inside the target box.";
+            }).catch(e => console.error(e));
+        }
+    }
+
+    function onScanSuccess(decodedText) {
+        if (decodedText.length < 4) return;
+        let cleanSN = decodedText.replace(/^(SN|S\/N)[:\s]*/i, '').trim();
+        const inputField = document.getElementById('serial_input');
+        inputField.value = cleanSN;
+        inputField.style.backgroundColor = '#d4edda';
+        autoMatchCategory(cleanSN, "");
+        stopCamera();
+    }
+
+    function fastOCRProcess(input) {
+        if (!input.files || !input.files[0]) return;
+        const statusDiv = document.getElementById('ocr-status');
+        statusDiv.innerText = "⚡ Reading image...";
+
+        const file = input.files[0];
+        const reader = new FileReader();
+
+        reader.onload = function(event) {
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                ctx.drawImage(img, 0, 0);
+
+                if (typeof Tesseract !== 'undefined') {
+                    Tesseract.recognize(canvas, 'eng')
+                        .then(({ data: { text } }) => {
+                            const snMatch = text.match(/(?:SN|Serial|S\/N)[:\s]*([A-Z0-9]{8,16})/i) || 
+                                            text.match(/\b(FOC[A-Z0-9]{8}|JAE[A-Z0-9]{8}|FP[A-Z0-9]{12}|PU3[A-Z0-9]{12})\b/i);
+
+                            if (snMatch) {
+                                const detectedSN = (snMatch[1] || snMatch[0]).trim();
+                                document.getElementById('serial_input').value = detectedSN;
+                                document.getElementById('serial_input').style.backgroundColor = '#d4edda';
+                                statusDiv.innerText = "✓ Serial detected: " + detectedSN;
+                                autoMatchCategory(detectedSN, text);
+                            } else {
+                                statusDiv.innerText = "⚠️ Serial text not found in image. Please type manually.";
+                            }
+                        })
+                        .catch(() => {
+                            statusDiv.innerText = "❌ OCR require internet connection. Please type serial manually or upload a bulk .csv/.txt file.";
+                        });
+                } else {
+                    statusDiv.innerText = "❌ Offline mode active. Use Bulk File Upload or type serial manually.";
+                }
+            };
+            img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function autoMatchCategory(sn, fullText) {
+        const select = document.getElementById('category_select');
+        const upperSN = sn.toUpperCase();
+        const lowerText = fullText.toLowerCase();
+
+        for (let option of select.options) {
+            const vendor = option.getAttribute('data-vendor');
+            if (!vendor) continue;
+
+            if ((upperSN.startsWith('FOC') || upperSN.startsWith('JAE') || lowerText.includes('cisco')) && vendor.includes('cisco')) {
+                select.value = option.value;
+                break;
+            } else if ((upperSN.startsWith('FP') || upperSN.startsWith('FG') || upperSN.startsWith('PU3') || lowerText.includes('fortinet')) && vendor.includes('fortinet')) {
+                select.value = option.value;
+                break;
+            }
+        }
+    }
+
+    function toggleCategory() {
+        var action = document.getElementById('actionSelect').value;
+        var fields = document.getElementById('entrance_fields');
+        fields.style.display = (action === 'ENTRANCE') ? 'block' : 'none';
+    }
+    toggleCategory();
+</script>
+{% endblock %}

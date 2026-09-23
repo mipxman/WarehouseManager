@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+    <h2>Warehouse Login</h2>
+    <form method="POST">
+        <p><input type="text" name="username" placeholder="Username" required style="width:95%; padding:8px;"></p>
+        <p><input type="password" name="password" placeholder="Password" required style="width:95%; padding:8px;"></p>
+        <p><button type="submit" style="padding: 10px 20px; background: #28a745; color: white; border: none;">Login</button></p>
+    </form>
+</div>
+{% endblock %}

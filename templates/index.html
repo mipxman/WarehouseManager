@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Warehouse Overview & Metrics</h2>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px;">
+    <div class="card" style="margin:0; text-align:center; background:#e3f2fd; border-left: 5px solid #007bff;">
+        <h3 style="margin:0; color:#0d47a1; font-size:24px;">{{ metrics.total_in_stock }}</h3>
+        <p style="margin:5px 0 0 0; font-weight:bold; color:#1565c0;">In Stock</p>
+    </div>
+    <div class="card" style="margin:0; text-align:center; background:#ffebee; border-left: 5px solid #dc3545;">
+        <h3 style="margin:0; color:#b71c1c; font-size:24px;">{{ metrics.total_exited }}</h3>
+        <p style="margin:5px 0 0 0; font-weight:bold; color:#c62828;">Exited</p>
+    </div>
+    <div class="card" style="margin:0; text-align:center; background:#e8f5e9; border-left: 5px solid #28a745;">
+        <h3 style="margin:0; color:#1b5e20; font-size:24px;">{{ metrics.total_registered }}</h3>
+        <p style="margin:5px 0 0 0; font-weight:bold; color:#2e7d32;">Total Serial Numbers</p>
+    </div>
+    <div class="card" style="margin:0; text-align:center; background:#fff3e0; border-left: 5px solid #fd7e14;">
+        <h3 style="margin:0; color:#e65100; font-size:24px;">{{ metrics.total_categories }}</h3>
+        <p style="margin:5px 0 0 0; font-weight:bold; color:#ef6c00;">Categories / Models</p>
+    </div>
+</div>
+
+<h2>Current Stock Levels by Model</h2>
+<div class="table-container">
+    <table>
+        <thead>
+            <tr>
+                <th>Vendor</th>
+                <th>Category</th>
+                <th>Model</th>
+                <th>Remaining In Stock</th>
+                <th>Exited Count</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in summary %}
+            <tr>
+                <td><strong>{{ row.vendor }}</strong></td>
+                <td>{{ row.category }}</td>
+                <td>{{ row.model }}</td>
+                <td><span style="color:green; font-weight:bold; font-size:16px;">{{ row.in_stock }}</span></td>
+                <td><span style="color:#dc3545;">{{ row.exited }}</span></td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="5" style="text-align:center; padding:20px; color:#666;">No models registered yet.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

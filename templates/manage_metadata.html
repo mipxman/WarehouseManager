@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+    <h2>1. Add Category (Vendor & Model)</h2>
+    <form method="POST">
+        <input type="hidden" name="form_type" value="add_category">
+        <p><label>Category Type (e.g., Switch, Firewall):</label><br>
+        <input type="text" name="name" required style="width:95%; padding:8px;"></p>
+        <p><label>Vendor (e.g., Cisco, Fortinet):</label><br>
+        <input type="text" name="vendor" required style="width:95%; padding:8px;"></p>
+        <p><label>Model (e.g., Catalyst 2960X, FG-60F):</label><br>
+        <input type="text" name="model" required style="width:95%; padding:8px;"></p>
+        <button type="submit" style="padding:8px 15px; background:#28a745; color:white; border:none;">Add Category</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>2. Add Property / Client</h2>
+    <form method="POST">
+        <input type="hidden" name="form_type" value="add_property">
+        <p><label>Client or Property Name:</label><br>
+        <input type="text" name="property_name" required style="width:95%; padding:8px;"></p>
+        <button type="submit" style="padding:8px 15px; background:#007bff; color:white; border:none;">Add Property/Client</button>
+    </form>
+</div>
+{% endblock %}

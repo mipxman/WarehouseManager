@@ -1,0 +1,241 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Inventory & Asset Reports</h2>
+
+<!-- Filter Box -->
+<div class="card" style="max-width:100%; margin-bottom:20px;">
+    <form method="GET" action="{{ url_for('report') }}">
+        <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+            <div style="flex:1; min-width:200px;">
+                <label><strong>🔍 Global Keyword Search:</strong></label>
+                <input type="text" name="search_query" value="{{ search_query if search_query else '' }}" placeholder="Search Serial, Comment, Model, Client, Status...">
+            </div>
+
+            <div style="flex:1; min-width:180px;">
+                <label><strong>Filter by Model:</strong></label>
+                <select name="model_filter">
+                    <option value="">-- All Models --</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat.model }}" {% if selected_model == cat.model %}selected{% endif %}>
+                        {{ cat.vendor }} {{ cat.model }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div style="flex:1; min-width:180px;">
+                <label><strong>Filter by Client / Property:</strong></label>
+                <select name="property_filter">
+                    <option value="">-- All Clients --</option>
+                    {% for prop in properties %}
+                    <option value="{{ prop.id }}" {% if selected_property == (prop.id|string) %}selected{% endif %}>
+                        {{ prop.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div style="display:flex; gap:8px;">
+                <button type="submit" style="width:auto; margin-bottom:12px; background:#007bff; border:1px solid #007bff; color:#fff;">Apply</button>
+                <a href="{{ url_for('report') }}" style="padding:12px 16px; background:transparent; border:1px solid #6c757d; color:#6c757d; text-decoration:none; border-radius:6px; font-size:16px; display:inline-block; margin-bottom:12px;">Reset</a>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Main Form Handling Selected Rows -->
+<form action="{{ url_for('bulk_action') }}" method="POST" id="bulkActionForm">
+    <input type="hidden" name="action" id="bulk_action_type" value="EXIT">
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <h3 style="margin:0;">Serial Number Items Breakdown ({{ items|length }} items)</h3>
+
+        <!-- Gmail-Style Floating Bulk Action Bar -->
+        <div id="gmailActionBar" style="display:none; background:#ffffff; border:1px solid #007bff; color:#007bff; padding:6px 14px; border-radius:30px; align-items:center; gap:10px; box-shadow:0 3px 6px rgba(0,0,0,0.1);">
+            <span style="font-size:13px; font-weight:bold;"><span id="selectedCount">0</span> selected</span>
+            <span style="color:#ccc;">|</span>
+            
+            <input type="text" name="comment" id="bulk_comment_input" placeholder="Batch comment..." style="margin:0; font-size:12px; padding:4px 10px; border-radius:15px; border:1px solid #ccc; width:160px;">
+            
+            <button type="button" onclick="submitBulk('EXIT')" style="background:transparent; border:1px solid #fd7e14; color:#fd7e14; padding:4px 10px; font-size:12px; margin:0; border-radius:15px; width:auto;">🚪 Exit Selected</button>
+            <button type="button" onclick="submitBulk('UPDATE_COMMENT')" style="background:transparent; border:1px solid #17a2b8; color:#17a2b8; padding:4px 10px; font-size:12px; margin:0; border-radius:15px; width:auto;">💬 Set Comment</button>
+            <button type="button" onclick="submitBulk('DELETE')" style="background:transparent; border:1px solid #dc3545; color:#dc3545; padding:4px 10px; font-size:12px; margin:0; border-radius:15px; width:auto;">🗑️ Delete</button>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:40px; text-align:center;">
+                        <input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)">
+                    </th>
+                    <th>Serial Number</th>
+                    <th>Vendor & Model</th>
+                    <th>Category</th>
+                    <th>Client / Property</th>
+                    <th>Entrance Date</th>
+                    <th>Exit Date</th>
+                    <th>Latest Comment</th>
+                    <th>Status</th>
+                    <th style="width:130px; text-align:center;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in items %}
+                {% set item = entry.obj %}
+                <tr>
+                    <td style="text-align:center;">
+                        <input type="checkbox" name="selected_items" value="{{ item.id }}" class="item-checkbox" onchange="updateActionBar()">
+                    </td>
+                    <td><strong>{{ item.serial_number }}</strong></td>
+                    <td>{{ item.category_rel.vendor }} {{ item.category_rel.model }}</td>
+                    <td>{{ item.category_rel.name }}</td>
+                    <td>{{ item.owner_property.name if item.owner_property else 'Unassigned' }}</td>
+                    <td style="font-size:13px; color:#333;">{{ entry.entrance_date }}</td>
+                    <td style="font-size:13px; color:#d9534f;">{{ entry.exit_date }}</td>
+                    <td style="font-size:13px; color:#555;">{{ entry.latest_comment }}</td>
+                    <td style="color: {{ 'green' if item.status == 'IN_STOCK' else 'red' }}; font-weight: bold;">{{ item.status }}</td>
+                    <td style="text-align:center;">
+                        <!-- OUTLINE ONLY ACTION BUTTONS -->
+                        <div style="display:flex; gap:6px; justify-content:center;">
+                            {% if item.status == 'IN_STOCK' %}
+                            <button type="button" onclick="openExitModal('{{ item.id }}', '{{ item.serial_number }}')" title="Quick Exit" style="padding:4px 8px; background:transparent; border:1px solid #fd7e14; color:#fd7e14; border-radius:4px; font-size:14px; margin:0; width:auto; cursor:pointer;">🚪</button>
+                            {% endif %}
+                            
+                            <button type="button" onclick="openEditModal('{{ item.id }}', '{{ item.serial_number }}', '{{ item.category_id }}', '{{ item.property_id if item.property_id else '' }}', '{{ item.status }}', '{{ entry.latest_comment if entry.latest_comment != '-' else '' }}')" title="Edit Item" style="padding:4px 8px; background:transparent; border:1px solid #ffc107; color:#d39e00; border-radius:4px; font-size:14px; margin:0; width:auto; cursor:pointer;">✏️</button>
+                            
+                            <button type="button" onclick="deleteSingleItem('{{ item.id }}', '{{ item.serial_number }}')" title="Delete Item" style="padding:4px 8px; background:transparent; border:1px solid #dc3545; color:#dc3545; border-radius:4px; font-size:14px; margin:0; width:auto; cursor:pointer;">🗑️</button>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="10" style="text-align:center; padding:15px; color:#666;">No matching records found.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</form>
+
+<!-- Single Delete Hidden Form -->
+<form id="singleDeleteForm" method="POST" style="display:none;"></form>
+
+<!-- Quick Exit Modal Dialog -->
+<div id="exitModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div class="card" style="width:90%; max-width:450px; background:#fff; padding:20px; border-radius:8px;">
+        <h3>Manual Device Exit</h3>
+        <p>Exiting device: <strong id="exit_sn_display"></strong></p>
+        <form id="exitForm" method="POST">
+            <label><strong>Exit Reason / Comment:</strong></label>
+            <textarea name="comment" rows="3" placeholder="Optional exit comment..."></textarea>
+
+            <div style="display:flex; gap:10px; margin-top:15px;">
+                <button type="submit" style="background:transparent; border:1px solid #fd7e14; color:#fd7e14; margin:0;">Confirm Exit</button>
+                <button type="button" onclick="closeExitModal()" style="background:transparent; border:1px solid #6c757d; color:#6c757d; margin:0;">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modify Device Entry Modal Dialog -->
+<div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div class="card" style="width:90%; max-width:500px; background:#fff; padding:20px; border-radius:8px;">
+        <h3>Modify Device Entry</h3>
+        <form id="editForm" method="POST">
+            <label><strong>Serial Number:</strong></label>
+            <input type="text" name="serial_number" id="edit_serial" required>
+
+            <label><strong>Category / Model:</strong></label>
+            <select name="category_id" id="edit_category" required>
+                {% for cat in categories %}
+                <option value="{{ cat.id }}">{{ cat.vendor }} {{ cat.name }} ({{ cat.model }})</option>
+                {% endfor %}
+            </select>
+
+            <label><strong>Client / Property Assignment:</strong></label>
+            <select name="property_id" id="edit_property">
+                <option value="">-- Unassigned / Company Stock --</option>
+                {% for prop in properties %}
+                <option value="{{ prop.id }}">{{ prop.name }}</option>
+                {% endfor %}
+            </select>
+
+            <label><strong>Status:</strong></label>
+            <select name="status" id="edit_status">
+                <option value="IN_STOCK">IN_STOCK</option>
+                <option value="EXITED">EXITED</option>
+            </select>
+
+            <label><strong>Comment / Note:</strong></label>
+            <textarea name="comment" id="edit_comment" rows="3" placeholder="Add or update notes for this entry..."></textarea>
+
+            <div style="display:flex; gap:10px; margin-top:15px;">
+                <button type="submit" style="background:transparent; border:1px solid #28a745; color:#28a745; margin:0;">Save Changes</button>
+                <button type="button" onclick="closeEditModal()" style="background:transparent; border:1px solid #6c757d; color:#6c757d; margin:0;">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function toggleSelectAll(master) {
+        const checkboxes = document.querySelectorAll('.item-checkbox');
+        checkboxes.forEach(cb => cb.checked = master.checked);
+        updateActionBar();
+    }
+
+    function updateActionBar() {
+        const checkedCount = document.querySelectorAll('.item-checkbox:checked').length;
+        const bar = document.getElementById('gmailActionBar');
+        document.getElementById('selectedCount').innerText = checkedCount;
+        bar.style.display = (checkedCount > 0) ? 'flex' : 'none';
+    }
+
+    function submitBulk(actionType) {
+        const checkedCount = document.querySelectorAll('.item-checkbox:checked').length;
+        if (checkedCount === 0) return;
+
+        let confirmMsg = "Apply " + actionType + " to " + checkedCount + " selected items?";
+        if (actionType === 'DELETE') confirmMsg = "PERMANENTLY DELETE " + checkedCount + " selected items?";
+
+        if (confirm(confirmMsg)) {
+            document.getElementById('bulk_action_type').value = actionType;
+            document.getElementById('bulkActionForm').submit();
+        }
+    }
+
+    function deleteSingleItem(id, sn) {
+        if (confirm('Delete item ' + sn + ' permanently?')) {
+            const form = document.getElementById('singleDeleteForm');
+            form.action = '/delete_item/' + id;
+            form.submit();
+        }
+    }
+
+    function openExitModal(id, serial) {
+        document.getElementById('exitForm').action = '/quick_exit/' + id;
+        document.getElementById('exit_sn_display').innerText = serial;
+        document.getElementById('exitModal').style.display = 'flex';
+    }
+
+    function closeExitModal() {
+        document.getElementById('exitModal').style.display = 'none';
+    }
+
+    function openEditModal(id, serial, categoryId, propertyId, status, comment) {
+        document.getElementById('editForm').action = '/edit_item/' + id;
+        document.getElementById('edit_serial').value = serial;
+        document.getElementById('edit_category').value = categoryId;
+        document.getElementById('edit_property').value = propertyId;
+        document.getElementById('edit_status').value = status;
+        document.getElementById('edit_comment').value = comment;
+        document.getElementById('editModal').style.display = 'flex';
+    }
+
+    function closeEditModal() {
+        document.getElementById('editModal').style.display = 'none';
+    }
+</script>
+{% endblock %}
