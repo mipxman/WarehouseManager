@@ -49,13 +49,14 @@ A lightweight, self-hosted web application designed to track the entrance, exit,
 
 3. **Run the container with Persistent Storage:**
       ```bash
-      docker run -d \
-        -p 5001:5000 \
-         -e TZ=Europe/Rome \
-        -v /home/mojtaba/warehouse:/app \
-        --restart unless-stopped \
-        --name warehouse_container \
-        warehouse-app
+   docker run -d \
+     -p 5001:5000 \
+     -e TZ=Europe/Rome \
+     -v $(pwd):/app \
+     --restart unless-stopped \
+     --name warehouse_container \
+     warehouse-app
+  
 4. **Access the APP:**
    
    Open your browser and navigate to `http://YOUR_SERVER_IP:5001`
