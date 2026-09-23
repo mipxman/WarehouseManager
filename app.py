@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import io
 import pandas as pd
 from sqlalchemy import or_
@@ -13,6 +14,17 @@ app.config['SECRET_KEY'] = 'your-secret-key-here'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///warehouse.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# Update your Transaction model's timestamp default:
+class Transaction(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(db.Integer, db.ForeignKey('item.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    action = db.Column(db.String(20), nullable=False)
+    timestamp = db.Column(db.DateTime, default=rome_now)  # Uses Europe/Rome local time
+    comment = db.Column(db.String(255), nullable=True)
+
+    item = db.relationship('Item', backref=db.backref('transactions', lazy=True))
+    user = db.relationship('User', backref=db.backref('transactions', lazy=True))
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
