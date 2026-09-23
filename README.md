@@ -39,7 +39,7 @@ A lightweight, self-hosted web application designed to track the entrance, exit,
 
 1. **Clone the Repository:**
    ```bash
-   git clone [https://github.com/mipxman/WarehouseManger.git](https://github.com/mipxman/WarehouseManager.git)
+   git clone https://github.com/mipxman/WarehouseManager.git
    cd WarehouseManager
 
 
