@@ -57,7 +57,7 @@ A lightweight, self-hosted web application designed to track the entrance, exit,
         warehouse-app
 4. **Access the APP:**
    
-   Open your browser and navigate to `[html5-qrcode](http://YOUR_SERVER_IP:5001)`
+   Open your browser and navigate to `http://YOUR_SERVER_IP:5001`
      Default username and password is : `admin/admin123`
 
   
