@@ -2,7 +2,7 @@
 {% block content %}
 <h2>Inventory & Asset Reports</h2>
 
-<!-- Filter Box -->
+<!-- Filter Card -->
 <div class="card" style="max-width:100%; margin-bottom:20px;">
     <form method="GET" action="{{ url_for('report') }}">
         <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
@@ -50,7 +50,6 @@
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
         <h3 style="margin:0;">Serial Number Items Breakdown ({{ items|length }} items)</h3>
 
-        <!-- Gmail-Style Floating Bulk Action Bar -->
         <div id="gmailActionBar" style="display:none; background:#ffffff; border:1px solid #007bff; color:#007bff; padding:6px 14px; border-radius:30px; align-items:center; gap:10px; box-shadow:0 3px 6px rgba(0,0,0,0.1);">
             <span style="font-size:13px; font-weight:bold;"><span id="selectedCount">0</span> selected</span>
             <span style="color:#ccc;">|</span>
@@ -78,7 +77,7 @@
                     <th>Exit Date</th>
                     <th>Latest Comment</th>
                     <th>Status</th>
-                    <th style="width:130px; text-align:center;">Actions</th>
+                    <th style="width:160px; text-align:center;">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -97,10 +96,14 @@
                     <td style="font-size:13px; color:#555;">{{ entry.latest_comment }}</td>
                     <td style="color: {{ 'green' if item.status == 'IN_STOCK' else 'red' }}; font-weight: bold;">{{ item.status }}</td>
                     <td style="text-align:center;">
-                        <!-- OUTLINE ONLY ACTION BUTTONS -->
-                        <div style="display:flex; gap:6px; justify-content:center;">
+                        <div style="display:flex; gap:4px; justify-content:center;">
+                            <!-- View History Timeline -->
+                            <button type="button" onclick="viewHistory('{{ item.id }}')" title="View Movement History Log" style="padding:4px 8px; background:transparent; border:1px solid #17a2b8; color:#17a2b8; border-radius:4px; font-size:14px; margin:0; width:auto; cursor:pointer;">📜</button>
+
                             {% if item.status == 'IN_STOCK' %}
                             <button type="button" onclick="openExitModal('{{ item.id }}', '{{ item.serial_number }}')" title="Quick Exit" style="padding:4px 8px; background:transparent; border:1px solid #fd7e14; color:#fd7e14; border-radius:4px; font-size:14px; margin:0; width:auto; cursor:pointer;">🚪</button>
+                            {% else %}
+                            <button type="button" onclick="openReenterModal('{{ item.id }}', '{{ item.serial_number }}')" title="Re-enter into Stock" style="padding:4px 8px; background:transparent; border:1px solid #28a745; color:#28a745; border-radius:4px; font-size:14px; margin:0; width:auto; cursor:pointer;">📥</button>
                             {% endif %}
                             
                             <button type="button" onclick="openEditModal('{{ item.id }}', '{{ item.serial_number }}', '{{ item.category_id }}', '{{ item.property_id if item.property_id else '' }}', '{{ item.status }}', '{{ entry.latest_comment if entry.latest_comment != '-' else '' }}')" title="Edit Item" style="padding:4px 8px; background:transparent; border:1px solid #ffc107; color:#d39e00; border-radius:4px; font-size:14px; margin:0; width:auto; cursor:pointer;">✏️</button>
@@ -121,6 +124,51 @@
 
 <!-- Single Delete Hidden Form -->
 <form id="singleDeleteForm" method="POST" style="display:none;"></form>
+
+<!-- Full History Log Modal Dialog -->
+<div id="historyModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div class="card" style="width:90%; max-width:600px; background:#fff; padding:20px; border-radius:8px; max-height:80vh; overflow-y:auto;">
+        <h3 style="margin-top:0;">Movement History: <span id="hist_sn" style="color:#007bff;"></span></h3>
+        <p style="font-size:13px; color:#666; margin-bottom:15px;" id="hist_model"></p>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date & Time</th>
+                        <th>Action</th>
+                        <th>User</th>
+                        <th>Comment / Details</th>
+                    </tr>
+                </thead>
+                <tbody id="hist_table_body">
+                    <!-- Populated dynamically via JS -->
+                </tbody>
+            </table>
+        </div>
+
+        <div style="text-align:right; margin-top:15px;">
+            <button type="button" onclick="closeHistoryModal()" style="background:transparent; border:1px solid #6c757d; color:#6c757d; margin:0; width:auto;">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Re-enter Modal Dialog -->
+<div id="reenterModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div class="card" style="width:90%; max-width:450px; background:#fff; padding:20px; border-radius:8px;">
+        <h3>Re-enter Item to Warehouse</h3>
+        <p>Re-entering device: <strong id="reenter_sn_display"></strong></p>
+        <form id="reenterForm" method="POST">
+            <label><strong>Re-entry Details / Note (e.g. Returned 20m cable):</strong></label>
+            <textarea name="comment" rows="3" placeholder="Specify return reason or quantity..."></textarea>
+
+            <div style="display:flex; gap:10px; margin-top:15px;">
+                <button type="submit" style="background:transparent; border:1px solid #28a745; color:#28a745; margin:0;">Confirm Re-entrance</button>
+                <button type="button" onclick="closeReenterModal()" style="background:transparent; border:1px solid #6c757d; color:#6c757d; margin:0;">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
 
 <!-- Quick Exit Modal Dialog -->
 <div id="exitModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
@@ -191,6 +239,45 @@
         const bar = document.getElementById('gmailActionBar');
         document.getElementById('selectedCount').innerText = checkedCount;
         bar.style.display = (checkedCount > 0) ? 'flex' : 'none';
+    }
+
+    function viewHistory(itemId) {
+        fetch('/item_history/' + itemId)
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('hist_sn').innerText = data.serial_number;
+                document.getElementById('hist_model').innerText = "Model: " + data.model;
+                
+                let tbody = document.getElementById('hist_table_body');
+                tbody.innerHTML = '';
+                
+                data.history.forEach(row => {
+                    let actionColor = (row.action === 'ENTRANCE' || row.action === 'IN_STOCK') ? 'green' : 'red';
+                    let tr = `<tr>
+                        <td>${row.timestamp}</td>
+                        <td style="color:${actionColor}; font-weight:bold;">${row.action}</td>
+                        <td>${row.user}</td>
+                        <td>${row.comment}</td>
+                    </tr>`;
+                    tbody.innerHTML += tr;
+                });
+
+                document.getElementById('historyModal').style.display = 'flex';
+            });
+    }
+
+    function closeHistoryModal() {
+        document.getElementById('historyModal').style.display = 'none';
+    }
+
+    function openReenterModal(id, serial) {
+        document.getElementById('reenterForm').action = '/reenter_item/' + id;
+        document.getElementById('reenter_sn_display').innerText = serial;
+        document.getElementById('reenterModal').style.display = 'flex';
+    }
+
+    function closeReenterModal() {
+        document.getElementById('reenterModal').style.display = 'none';
     }
 
     function submitBulk(actionType) {
