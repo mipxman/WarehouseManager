@@ -14,21 +14,6 @@ app.config['SECRET_KEY'] = 'your-secret-key-here'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///warehouse.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Update your Transaction model's timestamp default:
-class Transaction(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    item_id = db.Column(db.Integer, db.ForeignKey('item.id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    action = db.Column(db.String(20), nullable=False)
-    timestamp = db.Column(db.DateTime, default=rome_now)  # Uses Europe/Rome local time
-    comment = db.Column(db.String(255), nullable=True)
-
-    item = db.relationship('Item', backref=db.backref('transactions', lazy=True))
-    user = db.relationship('User', backref=db.backref('transactions', lazy=True))
-db = SQLAlchemy(app)
-login_manager = LoginManager(app)
-login_manager.login_view = 'login'
-
 # Models
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -58,10 +43,10 @@ class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     item_id = db.Column(db.Integer, db.ForeignKey('item.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    action = db.Column(db.String(10), nullable=False)  # 'ENTRANCE' or 'EXIT'
-    comment = db.Column(db.Text, nullable=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    
+    action = db.Column(db.String(20), nullable=False)
+    timestamp = db.Column(db.DateTime, default=rome_now)  # Uses Europe/Rome local time
+    comment = db.Column(db.String(255), nullable=True)
+
     item = db.relationship('Item', backref=db.backref('transactions', lazy=True))
     user = db.relationship('User', backref=db.backref('transactions', lazy=True))
 
