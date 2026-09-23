@@ -11,8 +11,8 @@ A lightweight, self-hosted web application designed to track the entrance, exit,
 * **Live Barcode & Camera Scanning:** Integrated `html5-qrcode` engine with specialized framing for small Code-128 serial labels on network hardware.
 * **OCR Photo Detection:** Extracts text and serial numbers directly from camera snapshots using `Tesseract.js`.
 * **Bulk Import Engine:** Upload `.txt`, `.csv`, `.xlsx`, or `.xls` packing slips and serial lists for one-click batch processing and vendor detection.
-* **Gmail-Style Action Bar:** Select multiple devices directly on the report view to execute mass exits, update comments, or bulk delete entries.
-* **Local DNS & HTTPS Support:** Native integration with containerized `dnsmasq` and Nginx Proxy Manager (NPM) for local domain resolution (`warehouse.necbologna.local`) with camera-compatible SSL certificates.
+* **Action Bar:** Select multiple devices directly on the report view to execute mass exits, update comments, or bulk delete entries.
+* **Local DNS & HTTPS Support:** Native integration with containerized `dnsmasq` and Nginx Proxy Manager (NPM) for local domain resolution (`warehouse.yourdomain.local`) with camera-compatible SSL certificates.
 * **Audit & Lifecycle Logs:** Comprehensive movement tracking records every entrance, exit, timestamp, and user comment.
 * **Clean & Modern UI:** Responsive, high-contrast interface featuring outline-styled controls and real-time dashboard analytics.
 
