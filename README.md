@@ -50,10 +50,11 @@ A lightweight, self-hosted web application designed to track the entrance, exit,
 3. **Run the container with Persistent Storage:**
       ```bash
       docker run -d \
-      --name warehouse_container \
         -p 5001:5000 \
-        -v $(pwd):/app \
+         -e TZ=Europe/Rome \
+        -v /home/mojtaba/warehouse:/app \
         --restart unless-stopped \
+        --name warehouse_container \
         warehouse-app
 4. **Access the APP:**
    
