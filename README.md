@@ -41,3 +41,22 @@ A lightweight, self-hosted web application designed to track the entrance, exit,
    ```bash
    git clone [https://github.com/mipxman/WarehouseManger.git](https://github.com/mipxman/WarehouseManager.git)
    cd WarehouseManager
+
+
+2. ** Build the Docker Image**
+      ```bash
+      docker build -t warehouse-app .
+
+3. ** Run the container with Persistent Storage:**
+      ```bash
+      docker run -d \
+      --name warehouse_container \
+        -p 5001:5000 \
+        -v $(pwd):/app \
+        --restart unless-stopped \
+        warehouse-app
+4. ** Access the APP : **
+   Open your browser and navigate to `[html5-qrcode](http://YOUR_SERVER_IP:5001)`
+     Default username and password is : `admin/admin123`
+
+  
