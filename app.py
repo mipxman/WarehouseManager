@@ -105,33 +105,73 @@ with app.app_context():
 @app.route('/')
 @login_required
 def index():
-    total_items = Item.query.count()
-    in_stock = Item.query.filter_by(status='IN_STOCK').count()
-    exited = Item.query.filter_by(status='EXITED').count()
-    recent_transactions = Transaction.query.order_by(Transaction.timestamp.desc()).limit(10).all()
     categories = Category.query.all()
-
+    
     category_counts = []
     for cat in categories:
-        count = Item.query.filter_by(category_id=cat.id, status='IN_STOCK').count()
-        category_counts.append({'name': cat.name, 'vendor': cat.vendor, 'model': cat.model, 'count': count})
+        in_stock_cnt = Item.query.filter_by(category_id=cat.id, status='IN_STOCK').count()
+        exited_cnt = Item.query.filter_by(category_id=cat.id, status='EXITED').count()
+        category_counts.append({
+            'vendor': cat.vendor,
+            'name': cat.name,
+            'model': cat.model,
+            'in_stock': in_stock_cnt,
+            'exited': exited_cnt
+        })
 
-    # Metrics dictionary required by index.html template
     metrics = {
-        'total_items': total_items,
-        'total_in_stock': in_stock,
-        'total_exited': exited
+        'total_items': Item.query.count(),
+        'total_in_stock': Item.query.filter_by(status='IN_STOCK').count(),
+        'total_exited': Item.query.filter_by(status='EXITED').count(),
+        'total_categories': len(categories)
     }
+
+    recent_transactions = Transaction.query.order_by(Transaction.timestamp.desc()).limit(10).all()
 
     return render_template(
         'index.html',
         metrics=metrics,
-        total_items=total_items,
-        in_stock=in_stock,
-        exited=exited,
         recent_transactions=recent_transactions,
         category_counts=category_counts
     )
+
+
+@app.route('/manage', methods=['GET', 'POST'])
+@login_required
+def manage_metadata():
+    if request.method == 'POST':
+        form_type = request.form.get('form_type')
+        if form_type == 'category':
+            name = request.form.get('name', '').strip()
+            vendor = request.form.get('vendor', '').strip()
+            model = request.form.get('model', '').strip()
+            if name and vendor and model:
+                db.session.add(Category(name=name, vendor=vendor, model=model))
+                db.session.commit()
+                flash('Category added!')
+        elif form_type == 'property':
+            prop_name = request.form.get('property_name', '').strip()
+            if prop_name:
+                db.session.add(PropertyClient(name=prop_name))
+                db.session.commit()
+                flash('Property / Client added!')
+        elif form_type == 'user':
+            username = request.form.get('username', '').strip()
+            password = request.form.get('password', '').strip()
+            if username and password:
+                if User.query.filter_by(username=username).first():
+                    flash('User already exists!')
+                else:
+                    new_u = User(username=username, password=generate_password_hash(password))
+                    db.session.add(new_u)
+                    db.session.commit()
+                    flash(f'User {username} created successfully!')
+        return redirect(url_for('manage_metadata'))
+
+    categories = Category.query.all()
+    properties = PropertyClient.query.all()
+    users = User.query.all()
+    return render_template('manage_metadata.html', categories=categories, properties=properties, users=users)
 
 @app.route('/uploads/<path:filename>')
 @login_required
@@ -157,7 +197,6 @@ def login():
 def logout():
     logout_user()
     return redirect(url_for('login'))
-
 @app.route('/transaction', methods=['GET', 'POST'])
 @login_required
 def transaction():
@@ -168,10 +207,20 @@ def transaction():
         property_id = request.form.get('property_id')
         comment = request.form.get('comment', '').strip()
         attachment_file = request.files.get('attachment')
+        custom_time_str = request.form.get('custom_timestamp')
 
         if not serial_number:
             flash('Error: Serial number is required!')
             return redirect(url_for('transaction'))
+
+        # Parsing della data/ora personalizzata
+        if custom_time_str:
+            try:
+                event_timestamp = datetime.strptime(custom_time_str, '%Y-%m-%dT%H:%M')
+            except ValueError:
+                event_timestamp = rome_now()
+        else:
+            event_timestamp = rome_now()
 
         uploaded_filename = save_attachment(attachment_file)
         item = Item.query.filter_by(serial_number=serial_number).first()
@@ -204,7 +253,8 @@ def transaction():
             user_id=current_user.id, 
             action=action, 
             comment=comment,
-            attachment=uploaded_filename
+            attachment=uploaded_filename,
+            timestamp=event_timestamp  # Salva la data scelta dall'utente
         )
         db.session.add(tx)
         db.session.commit()
@@ -215,6 +265,44 @@ def transaction():
     categories = Category.query.all()
     properties = PropertyClient.query.all()
     return render_template('log_transaction.html', categories=categories, properties=properties)
+
+
+@app.route('/edit_item/<int:item_id>', methods=['POST'])
+@login_required
+def edit_item(item_id):
+    item = Item.query.get_or_404(item_id)
+    new_serial = request.form.get('serial_number', '').strip()
+    category_id = request.form.get('category_id')
+    property_id = request.form.get('property_id')
+    status = request.form.get('status')
+    comment = request.form.get('comment', '').strip()
+    custom_time_str = request.form.get('custom_timestamp')
+
+    if new_serial and new_serial != item.serial_number:
+        if Item.query.filter_by(serial_number=new_serial).first():
+            flash(f'Error: Serial number {new_serial} already exists!')
+            return redirect(url_for('report'))
+        item.serial_number = new_serial
+
+    if category_id and category_id.isdigit():
+        item.category_id = int(category_id)
+
+    item.property_id = int(property_id) if (property_id and property_id.isdigit()) else None
+    item.status = status
+
+    latest_tx = Transaction.query.filter_by(item_id=item.id).order_by(Transaction.timestamp.desc()).first()
+    if latest_tx:
+        if comment:
+            latest_tx.comment = comment
+        if custom_time_str:
+            try:
+                latest_tx.timestamp = datetime.strptime(custom_time_str, '%Y-%m-%dT%H:%M')
+            except ValueError:
+                pass
+
+    db.session.commit()
+    flash(f'Device details for {item.serial_number} updated successfully!')
+    return redirect(url_for('report'))
 
 @app.route('/report')
 @login_required
