@@ -267,42 +267,6 @@ def transaction():
     return render_template('log_transaction.html', categories=categories, properties=properties)
 
 
-@app.route('/edit_item/<int:item_id>', methods=['POST'])
-@login_required
-def edit_item(item_id):
-    item = Item.query.get_or_404(item_id)
-    new_serial = request.form.get('serial_number', '').strip()
-    category_id = request.form.get('category_id')
-    property_id = request.form.get('property_id')
-    status = request.form.get('status')
-    comment = request.form.get('comment', '').strip()
-    custom_time_str = request.form.get('custom_timestamp')
-
-    if new_serial and new_serial != item.serial_number:
-        if Item.query.filter_by(serial_number=new_serial).first():
-            flash(f'Error: Serial number {new_serial} already exists!')
-            return redirect(url_for('report'))
-        item.serial_number = new_serial
-
-    if category_id and category_id.isdigit():
-        item.category_id = int(category_id)
-
-    item.property_id = int(property_id) if (property_id and property_id.isdigit()) else None
-    item.status = status
-
-    latest_tx = Transaction.query.filter_by(item_id=item.id).order_by(Transaction.timestamp.desc()).first()
-    if latest_tx:
-        if comment:
-            latest_tx.comment = comment
-        if custom_time_str:
-            try:
-                latest_tx.timestamp = datetime.strptime(custom_time_str, '%Y-%m-%dT%H:%M')
-            except ValueError:
-                pass
-
-    db.session.commit()
-    flash(f'Device details for {item.serial_number} updated successfully!')
-    return redirect(url_for('report'))
 
 @app.route('/report')
 @login_required
@@ -468,6 +432,7 @@ def edit_item(item_id):
     property_id = request.form.get('property_id')
     status = request.form.get('status')
     comment = request.form.get('comment', '').strip()
+    custom_time_str = request.form.get('custom_timestamp')
 
     if new_serial and new_serial != item.serial_number:
         if Item.query.filter_by(serial_number=new_serial).first():
@@ -481,10 +446,15 @@ def edit_item(item_id):
     item.property_id = int(property_id) if (property_id and property_id.isdigit()) else None
     item.status = status
 
-    if comment:
-        latest_tx = Transaction.query.filter_by(item_id=item.id).order_by(Transaction.timestamp.desc()).first()
-        if latest_tx:
+    latest_tx = Transaction.query.filter_by(item_id=item.id).order_by(Transaction.timestamp.desc()).first()
+    if latest_tx:
+        if comment:
             latest_tx.comment = comment
+        if custom_time_str:
+            try:
+                latest_tx.timestamp = datetime.strptime(custom_time_str, '%Y-%m-%dT%H:%M')
+            except ValueError:
+                pass
 
     db.session.commit()
     flash(f'Device details for {item.serial_number} updated successfully!')
