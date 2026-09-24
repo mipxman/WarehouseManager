@@ -11,8 +11,8 @@ from sqlalchemy import or_, text
 import pandas as pd
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'necbologna_secret_key_2026'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///warehouse.db'
+app.config['SECRET_KEY'] = 'secret_key'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'warehouse.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # --- UPLOAD FOLDER CONFIGURATION ---
@@ -433,11 +433,13 @@ def delete_item(item_id):
     db.session.commit()
     flash(f'Item {serial} deleted permanently.')
     return redirect(url_for('report'))
+    
 @app.route('/manage', methods=['GET', 'POST'])
 @login_required
 def manage_metadata():
     if request.method == 'POST':
         form_type = request.form.get('form_type')
+        
         if form_type == 'category':
             name = request.form.get('name', '').strip()
             vendor = request.form.get('vendor', '').strip()
@@ -445,13 +447,15 @@ def manage_metadata():
             if name and vendor and model:
                 db.session.add(Category(name=name, vendor=vendor, model=model))
                 db.session.commit()
-                flash('Category added!')
+                flash('Category added successfully!')
+
         elif form_type == 'property':
             prop_name = request.form.get('property_name', '').strip()
             if prop_name:
                 db.session.add(PropertyClient(name=prop_name))
                 db.session.commit()
-                flash('Property / Client added!')
+                flash('Property / Client added successfully!')
+
         elif form_type == 'user':
             username = request.form.get('username', '').strip()
             password = request.form.get('password', '').strip()
@@ -462,14 +466,16 @@ def manage_metadata():
                     new_u = User(username=username, password=generate_password_hash(password))
                     db.session.add(new_u)
                     db.session.commit()
-                    flash(f'User {username} created successfully!')
+                    flash(f'User {username} created!')
+                    
         return redirect(url_for('manage_metadata'))
 
     categories = Category.query.all()
     properties = PropertyClient.query.all()
     users = User.query.all()
     return render_template('manage_metadata.html', categories=categories, properties=properties, users=users)
-    
+
+
 @app.route('/bulk_import', methods=['GET', 'POST'])
 @login_required
 def bulk_import():
