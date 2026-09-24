@@ -14,7 +14,7 @@ import pandas as pd
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'MySecureKEY_PERDB'
+app.config['SECRET_KEY'] = 'necbologna_secret_key_2026'
 
 # Lock SQLite directly to /app/warehouse.db on the mounted host volume
 db_path = os.path.join(basedir, 'warehouse.db')
@@ -481,11 +481,16 @@ def bulk_import():
     if request.method == 'POST':
         category_id = request.form.get('category_id')
         property_id = request.form.get('property_id')
+        batch_comment = request.form.get('comment', '').strip()
         file = request.files.get('file')
+        attachment_file = request.files.get('attachment')
 
-        if not category_id or not file:
-            flash('Category and file are required!')
+        if not file:
+            flash('Error: Serial list file (.txt, .csv, .xlsx) is required!')
             return redirect(url_for('bulk_import'))
+
+        # Save optional invoice / factor attachment
+        uploaded_attachment = save_attachment(attachment_file)
 
         filename = file.filename.lower()
         serials = []
@@ -501,7 +506,7 @@ def bulk_import():
                 flash('Unsupported file format!')
                 return redirect(url_for('bulk_import'))
         except Exception as e:
-            flash(f'Error processing file: {str(e)}')
+            flash(f'Error processing serial list file: {str(e)}')
             return redirect(url_for('bulk_import'))
 
         imported_count = 0
@@ -510,17 +515,35 @@ def bulk_import():
                 continue
 
             item = Item.query.filter_by(serial_number=sn).first()
+            cat_id_to_use = int(category_id) if (category_id and category_id.isdigit()) else None
+
             if not item:
-                item = Item(serial_number=sn, category_id=int(category_id), status='IN_STOCK')
+                if not cat_id_to_use:
+                    first_cat = Category.query.first()
+                    cat_id_to_use = first_cat.id if first_cat else 1
+
+                item = Item(serial_number=sn, category_id=cat_id_to_use, status='IN_STOCK')
                 if property_id and property_id.isdigit():
                     item.property_id = int(property_id)
                 db.session.add(item)
                 db.session.flush()
-                db.session.add(Transaction(item_id=item.id, user_id=current_user.id, action='ENTRANCE', comment='Bulk File Import'))
-                imported_count += 1
+            else:
+                item.status = 'IN_STOCK'
+                if property_id and property_id.isdigit():
+                    item.property_id = int(property_id)
+
+            # Record movement transaction with attached invoice/factor
+            db.session.add(Transaction(
+                item_id=item.id,
+                user_id=current_user.id,
+                action='ENTRANCE',
+                comment=batch_comment or 'Bulk File Import',
+                attachment=uploaded_attachment
+            ))
+            imported_count += 1
 
         db.session.commit()
-        flash(f'Successfully imported {imported_count} new serials!')
+        flash(f'Successfully processed bulk import for {imported_count} serials!')
         return redirect(url_for('report'))
 
     categories = Category.query.all()
