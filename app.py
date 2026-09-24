@@ -136,43 +136,6 @@ def index():
     )
 
 
-@app.route('/manage', methods=['GET', 'POST'])
-@login_required
-def manage_metadata():
-    if request.method == 'POST':
-        form_type = request.form.get('form_type')
-        if form_type == 'category':
-            name = request.form.get('name', '').strip()
-            vendor = request.form.get('vendor', '').strip()
-            model = request.form.get('model', '').strip()
-            if name and vendor and model:
-                db.session.add(Category(name=name, vendor=vendor, model=model))
-                db.session.commit()
-                flash('Category added!')
-        elif form_type == 'property':
-            prop_name = request.form.get('property_name', '').strip()
-            if prop_name:
-                db.session.add(PropertyClient(name=prop_name))
-                db.session.commit()
-                flash('Property / Client added!')
-        elif form_type == 'user':
-            username = request.form.get('username', '').strip()
-            password = request.form.get('password', '').strip()
-            if username and password:
-                if User.query.filter_by(username=username).first():
-                    flash('User already exists!')
-                else:
-                    new_u = User(username=username, password=generate_password_hash(password))
-                    db.session.add(new_u)
-                    db.session.commit()
-                    flash(f'User {username} created successfully!')
-        return redirect(url_for('manage_metadata'))
-
-    categories = Category.query.all()
-    properties = PropertyClient.query.all()
-    users = User.query.all()
-    return render_template('manage_metadata.html', categories=categories, properties=properties, users=users)
-
 @app.route('/uploads/<path:filename>')
 @login_required
 def download_file(filename):
@@ -470,7 +433,6 @@ def delete_item(item_id):
     db.session.commit()
     flash(f'Item {serial} deleted permanently.')
     return redirect(url_for('report'))
-
 @app.route('/manage', methods=['GET', 'POST'])
 @login_required
 def manage_metadata():
@@ -490,12 +452,24 @@ def manage_metadata():
                 db.session.add(PropertyClient(name=prop_name))
                 db.session.commit()
                 flash('Property / Client added!')
+        elif form_type == 'user':
+            username = request.form.get('username', '').strip()
+            password = request.form.get('password', '').strip()
+            if username and password:
+                if User.query.filter_by(username=username).first():
+                    flash('User already exists!')
+                else:
+                    new_u = User(username=username, password=generate_password_hash(password))
+                    db.session.add(new_u)
+                    db.session.commit()
+                    flash(f'User {username} created successfully!')
         return redirect(url_for('manage_metadata'))
 
     categories = Category.query.all()
     properties = PropertyClient.query.all()
-    return render_template('manage_metadata.html', categories=categories, properties=properties)
-
+    users = User.query.all()
+    return render_template('manage_metadata.html', categories=categories, properties=properties, users=users)
+    
 @app.route('/bulk_import', methods=['GET', 'POST'])
 @login_required
 def bulk_import():
