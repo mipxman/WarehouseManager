@@ -1,18 +1,39 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-from werkzeug.security import generate_password_hash, check_password_hash
+import os
+import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from sqlalchemy import or_, text
 import pandas as pd
-import os
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'necbologna_secret_key_2026'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///warehouse.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# 1. INITIALIZE DB FIRST
+# --- UPLOAD FOLDER CONFIGURATION ---
+UPLOAD_FOLDER = os.path.join(app.root_path, 'uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'pdf'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def save_attachment(file_obj):
+    if file_obj and file_obj.filename != '' and allowed_file(file_obj.filename):
+        ext = file_obj.filename.rsplit('.', 1)[1].lower()
+        unique_name = f"{uuid.uuid4().hex[:10]}_{secure_filename(file_obj.filename)}"
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
+        file_obj.save(file_path)
+        return unique_name
+    return None
+
+# --- DATABASE & LOGIN INITIALIZATION ---
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
@@ -21,7 +42,10 @@ login_manager.login_view = 'login'
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# 2. DEFINE MODELS AFTER DB IS INITIALIZED
+def rome_now():
+    return datetime.now(ZoneInfo("Europe/Rome"))
+
+# --- MODELS ---
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -47,9 +71,6 @@ class Item(db.Model):
     category_rel = db.relationship('Category', backref=db.backref('items', lazy=True))
     owner_property = db.relationship('PropertyClient', backref=db.backref('items', lazy=True))
 
-def rome_now():
-    return datetime.now(ZoneInfo("Europe/Rome"))
-
 class Transaction(db.Model):
     __tablename__ = 'transaction'
     __table_args__ = {'extend_existing': True}
@@ -60,57 +81,75 @@ class Transaction(db.Model):
     action = db.Column(db.String(20), nullable=False)
     timestamp = db.Column(db.DateTime, default=rome_now)
     comment = db.Column(db.String(255), nullable=True)
+    attachment = db.Column(db.String(255), nullable=True)
 
     item = db.relationship('Item', backref=db.backref('transactions', lazy=True))
     user = db.relationship('User', backref=db.backref('transactions', lazy=True))
 
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
+# Auto-migrate DB schema
+with app.app_context():
+    db.create_all()
+    try:
+        db.session.execute(text("ALTER TABLE transaction ADD COLUMN attachment VARCHAR(255)"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
 
-# Routes
+    if not User.query.filter_by(username='admin').first():
+        default_admin = User(username='admin', password=generate_password_hash('admin123'))
+        db.session.add(default_admin)
+        db.session.commit()
+
+# --- ROUTES ---
+
 @app.route('/')
 @login_required
 def index():
+    total_items = Item.query.count()
+    in_stock = Item.query.filter_by(status='IN_STOCK').count()
+    exited = Item.query.filter_by(status='EXITED').count()
+    recent_transactions = Transaction.query.order_by(Transaction.timestamp.desc()).limit(10).all()
     categories = Category.query.all()
-    inventory_summary = []
-    
-    total_in_stock = 0
-    total_exited = 0
 
+    category_counts = []
     for cat in categories:
-        # Count items per category based on status
-        in_stock_count = Item.query.filter_by(category_id=cat.id, status='IN_STOCK').count()
-        exited_count = Item.query.filter_by(category_id=cat.id, status='EXITED').count()
-        
-        total_in_stock += in_stock_count
-        total_exited += exited_count
+        count = Item.query.filter_by(category_id=cat.id, status='IN_STOCK').count()
+        category_counts.append({'name': cat.name, 'vendor': cat.vendor, 'model': cat.model, 'count': count})
 
-        inventory_summary.append({
-            'vendor': cat.vendor,
-            'category': cat.name,
-            'model': cat.model,
-            'in_stock': in_stock_count,
-            'exited': exited_count
-        })
-
+    # Metrics dictionary required by index.html template
     metrics = {
-        'total_registered': Item.query.count(),
-        'total_in_stock': total_in_stock,
-        'total_exited': total_exited,
-        'total_categories': len(categories)
+        'total_items': total_items,
+        'total_in_stock': in_stock,
+        'total_exited': exited
     }
 
-    return render_template('index.html', summary=inventory_summary, metrics=metrics)
+    return render_template(
+        'index.html',
+        metrics=metrics,
+        total_items=total_items,
+        in_stock=in_stock,
+        exited=exited,
+        recent_transactions=recent_transactions,
+        category_counts=category_counts
+    )
+
+@app.route('/uploads/<path:filename>')
+@login_required
+def download_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        user = User.query.filter_by(username=request.form.get('username')).first()
-        if user and check_password_hash(user.password, request.form.get('password')):
+        username = request.form.get('username')
+        password = request.form.get('password')
+        user = User.query.filter_by(username=username).first()
+
+        if user and check_password_hash(user.password, password):
             login_user(user)
             return redirect(url_for('index'))
-        flash('Invalid username or password')
+        else:
+            flash('Invalid username or password!')
     return render_template('login.html')
 
 @app.route('/logout')
@@ -119,236 +158,163 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
-@app.route('/manage', methods=['GET', 'POST'])
-@login_required
-def manage_metadata():
-    if request.method == 'POST':
-        form_type = request.form.get('form_type')
-        if form_type == 'add_category':
-            name = request.form.get('name')
-            vendor = request.form.get('vendor')
-            model = request.form.get('model')
-            if not Category.query.filter_by(model=model).first():
-                db.session.add(Category(name=name, vendor=vendor, model=model))
-                db.session.commit()
-                flash('New Model/Category added successfully!')
-            else:
-                flash('Model already exists!')
-        elif form_type == 'add_property':
-            prop_name = request.form.get('property_name')
-            if not PropertyClient.query.filter_by(name=prop_name).first():
-                db.session.add(PropertyClient(name=prop_name))
-                db.session.commit()
-                flash('New Property/Client added successfully!')
-            else:
-                flash('Property/Client already exists!')
-        return redirect(url_for('manage_metadata'))
-        
-    categories = Category.query.all()
-    properties = PropertyClient.query.all()
-    return render_template('manage_metadata.html', categories=categories, properties=properties)
-
 @app.route('/transaction', methods=['GET', 'POST'])
 @login_required
 def transaction():
-    categories = Category.query.all()
-    properties = PropertyClient.query.all()
-    
     if request.method == 'POST':
-        serial_number = request.form.get('serial_number', '').strip()
         action = request.form.get('action')
+        serial_number = request.form.get('serial_number', '').strip()
         category_id = request.form.get('category_id')
         property_id = request.form.get('property_id')
         comment = request.form.get('comment', '').strip()
+        attachment_file = request.files.get('attachment')
 
-        # Convert IDs safely
-        cat_id = int(category_id) if category_id and category_id.isdigit() else None
-        prop_id = int(property_id) if property_id and property_id.isdigit() else None
+        if not serial_number:
+            flash('Error: Serial number is required!')
+            return redirect(url_for('transaction'))
 
+        uploaded_filename = save_attachment(attachment_file)
         item = Item.query.filter_by(serial_number=serial_number).first()
 
         if action == 'ENTRANCE':
             if item and item.status == 'IN_STOCK':
-                flash(f'Error: Device {serial_number} is ALREADY in stock!')
+                flash(f'Item {serial_number} is ALREADY IN STOCK!')
                 return redirect(url_for('transaction'))
             
             if not item:
-                if not cat_id:
-                    flash('Error: Category/Model selection required for new devices!')
+                if not category_id or not category_id.isdigit():
+                    flash('Error: Model/Category selection required for new item!')
                     return redirect(url_for('transaction'))
-                item = Item(
-                    serial_number=serial_number, 
-                    category_id=cat_id, 
-                    property_id=prop_id, 
-                    status='IN_STOCK'
-                )
+                item = Item(serial_number=serial_number, category_id=int(category_id), status='IN_STOCK')
                 db.session.add(item)
             else:
                 item.status = 'IN_STOCK'
-                item.property_id = prop_id
-                if cat_id:
-                    item.category_id = cat_id
             
+            if property_id and property_id.isdigit():
+                item.property_id = int(property_id)
+
         elif action == 'EXIT':
             if not item or item.status == 'EXITED':
-                flash(f'Error: Device {serial_number} is NOT currently in warehouse stock!')
+                flash(f'Error: Item {serial_number} is not in stock!')
                 return redirect(url_for('transaction'))
-            
             item.status = 'EXITED'
 
-        # Log transaction history
-        new_trans = Transaction(
+        tx = Transaction(
             item=item, 
             user_id=current_user.id, 
             action=action, 
-            comment=comment
+            comment=comment,
+            attachment=uploaded_filename
         )
-        db.session.add(new_trans)
+        db.session.add(tx)
         db.session.commit()
-        
-        flash(f'Successfully recorded {action} for Serial Number: {serial_number}')
-        return redirect(url_for('index'))
 
-    return render_template('log_transaction.html', categories=categories, properties=properties)
+        flash(f'Movement logged for serial: {serial_number}')
+        return redirect(url_for('transaction'))
 
-@app.route('/quick_exit/<int:item_id>', methods=['POST'])
-@login_required
-def quick_exit(item_id):
-    item = Item.query.get_or_404(item_id)
-    comment = request.form.get('comment', 'Manual exit from Report page').strip()
-
-    if item.status == 'EXITED':
-        flash(f'Device {item.serial_number} is already marked as EXITED!')
-        return redirect(url_for('report'))
-
-    item.status = 'EXITED'
-    
-    # Record movement in audit log
-    new_trans = Transaction(
-        item_id=item.id,
-        user_id=current_user.id,
-        action='EXIT',
-        comment=comment
-    )
-    db.session.add(new_trans)
-    db.session.commit()
-
-    flash(f'Device {item.serial_number} marked as EXITED successfully!')
-    return redirect(url_for('report'))
-
-@app.route('/bulk_import', methods=['GET', 'POST'])
-@login_required
-def bulk_import():
     categories = Category.query.all()
     properties = PropertyClient.query.all()
+    return render_template('log_transaction.html', categories=categories, properties=properties)
 
-    if request.method == 'POST':
-        action = request.form.get('action')
-        category_id = request.form.get('category_id')
-        property_id = request.form.get('property_id')
-        comment = request.form.get('comment', '').strip()
-        uploaded_file = request.files.get('file')
+@app.route('/report')
+@login_required
+def report():
+    selected_model = request.args.get('model_filter', '')
+    selected_property = request.args.get('property_filter', '')
+    search_query = request.args.get('search_query', '').strip()
 
-        if not uploaded_file or uploaded_file.filename == '':
-            flash('Error: No file selected for upload!')
-            return redirect(url_for('bulk_import'))
+    query = Item.query.outerjoin(Category).outerjoin(PropertyClient).outerjoin(Transaction)
 
-        filename = uploaded_file.filename.lower()
-        extracted_serials = []
+    if selected_model:
+        query = query.filter(Category.model == selected_model)
+    if selected_property and selected_property.isdigit():
+        query = query.filter(Item.property_id == int(selected_property))
 
-        try:
-            # 1. Parse Plain Text Files (.txt)
-            if filename.endswith('.txt'):
-                content = uploaded_file.read().decode('utf-8', errors='ignore')
-                extracted_serials = [line.strip() for line in content.splitlines() if line.strip()]
+    if search_query:
+        search_pattern = f'%{search_query}%'
+        query = query.filter(
+            or_(
+                Item.serial_number.ilike(search_pattern),
+                Item.status.ilike(search_pattern),
+                Category.name.ilike(search_pattern),
+                Category.vendor.ilike(search_pattern),
+                Category.model.ilike(search_pattern),
+                PropertyClient.name.ilike(search_pattern),
+                Transaction.comment.ilike(search_pattern)
+            )
+        )
 
-            # 2. Parse CSV Files (.csv)
-            elif filename.endswith('.csv'):
-                df = pd.read_csv(uploaded_file, header=None)
-                # Flatten all columns and extract non-empty strings
-                extracted_serials = df.astype(str).values.flatten().tolist()
-                extracted_serials = [s.strip() for s in extracted_serials if s.strip() and s.strip().lower() != 'nan']
+    filtered_items = query.distinct().all()
 
-            # 3. Parse Excel Files (.xlsx, .xls)
-            elif filename.endswith(('.xlsx', '.xls')):
-                df = pd.read_excel(uploaded_file, header=None)
-                extracted_serials = df.astype(str).values.flatten().tolist()
-                extracted_serials = [s.strip() for s in extracted_serials if s.strip() and s.strip().lower() != 'nan']
+    enriched_items = []
+    for item in filtered_items:
+        entrance_tx = Transaction.query.filter_by(item_id=item.id, action='ENTRANCE').order_by(Transaction.timestamp.asc()).first()
+        exit_tx = Transaction.query.filter_by(item_id=item.id, action='EXIT').order_by(Transaction.timestamp.desc()).first()
+        latest_tx = Transaction.query.filter_by(item_id=item.id).order_by(Transaction.timestamp.desc()).first()
 
-            else:
-                flash('Error: Unsupported file format! Please upload a .txt, .csv, or .xlsx file.')
-                return redirect(url_for('bulk_import'))
+        enriched_items.append({
+            'obj': item,
+            'entrance_date': entrance_tx.timestamp.strftime('%Y-%m-%d %H:%M') if entrance_tx else '-',
+            'exit_date': exit_tx.timestamp.strftime('%Y-%m-%d %H:%M') if (exit_tx and item.status == 'EXITED') else '-',
+            'latest_comment': latest_tx.comment if (latest_tx and latest_tx.comment) else '-',
+            'attachment': latest_tx.attachment if (latest_tx and latest_tx.attachment) else None
+        })
 
-        except Exception as e:
-            flash(f'Error reading file: {str(e)}')
-            return redirect(url_for('bulk_import'))
+    all_categories = Category.query.all()
+    all_properties = PropertyClient.query.all()
+    all_transactions = Transaction.query.order_by(Transaction.timestamp.desc()).all()
 
-        # Clean serials (remove headers like "Serial Number" or "SN")
-        clean_serials = []
-        for sn in extracted_serials:
-            cleaned = sn.replace('SN:', '').replace('S/N:', '').strip()
-            if len(cleaned) >= 4 and cleaned.lower() not in ['serial', 'serial number', 'sn', 's/n', 'n/a']:
-                clean_serials.append(cleaned)
+    return render_template(
+        'report.html', 
+        items=enriched_items, 
+        categories=all_categories, 
+        properties=all_properties, 
+        transactions=all_transactions,
+        selected_model=selected_model,
+        selected_property=selected_property,
+        search_query=search_query
+    )
 
-        # Deduplicate while preserving order
-        unique_serials = list(dict.fromkeys(clean_serials))
+@app.route('/item_history/<int:item_id>')
+@login_required
+def item_history(item_id):
+    item = Item.query.get_or_404(item_id)
+    tx_list = Transaction.query.filter_by(item_id=item.id).order_by(Transaction.timestamp.desc()).all()
+    
+    history_data = []
+    for tx in tx_list:
+        history_data.append({
+            'timestamp': tx.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+            'action': tx.action,
+            'user': tx.user.username if tx.user else 'System',
+            'comment': tx.comment or '-',
+            'attachment': tx.attachment or None
+        })
 
-        if not unique_serials:
-            flash('No valid serial numbers found in the uploaded file.')
-            return redirect(url_for('bulk_import'))
+    return jsonify({
+        'serial_number': item.serial_number,
+        'model': f"{item.category_rel.vendor} {item.category_rel.model}",
+        'history': history_data
+    })
 
-        cat_id = int(category_id) if category_id and category_id.isdigit() else None
-        prop_id = int(property_id) if property_id and property_id.isdigit() else None
+@app.route('/reenter_item/<int:item_id>', methods=['POST'])
+@login_required
+def reenter_item(item_id):
+    item = Item.query.get_or_404(item_id)
+    comment = request.form.get('comment', 'Re-entered into warehouse stock').strip()
 
-        added_count = 0
-        skipped_count = 0
+    item.status = 'IN_STOCK'
+    new_tx = Transaction(
+        item_id=item.id,
+        user_id=current_user.id,
+        action='ENTRANCE',
+        comment=comment
+    )
+    db.session.add(new_tx)
+    db.session.commit()
 
-        for sn in unique_serials:
-            item = Item.query.filter_by(serial_number=sn).first()
-
-            if action == 'ENTRANCE':
-                if item and item.status == 'IN_STOCK':
-                    skipped_count += 1
-                    continue
-
-                # Auto-detect category if not manually selected
-                item_cat_id = cat_id
-                if not item_cat_id:
-                    upper_sn = sn.upper()
-                    if upper_sn.startswith(('FOC', 'JAE')):
-                        cisco_cat = Category.query.filter(Category.vendor.ilike('%cisco%')).first()
-                        item_cat_id = cisco_cat.id if cisco_cat else None
-                    elif upper_sn.startswith(('FP', 'FG', 'PU3')):
-                        forti_cat = Category.query.filter(Category.vendor.ilike('%fortinet%')).first()
-                        item_cat_id = forti_cat.id if forti_cat else None
-
-                if not item:
-                    if not item_cat_id:
-                        skipped_count += 1
-                        continue
-                    item = Item(serial_number=sn, category_id=item_cat_id, property_id=prop_id, status='IN_STOCK')
-                    db.session.add(item)
-                else:
-                    item.status = 'IN_STOCK'
-                    item.property_id = prop_id
-                    if item_cat_id:
-                        item.category_id = item_cat_id
-
-            elif action == 'EXIT':
-                if not item or item.status == 'EXITED':
-                    skipped_count += 1
-                    continue
-                item.status = 'EXITED'
-
-            # Audit log
-            db.session.add(Transaction(item=item, user_id=current_user.id, action=action, comment=comment or 'Bulk File Import'))
-            added_count += 1
-
-        db.session.commit()
-        flash(f'Bulk processing complete! Successfully processed: {added_count} items. Skipped/Duplicates: {skipped_count}.')
-        return redirect(url_for('report'))
-
-    return render_template('bulk_import.html', categories=categories, properties=properties)
+    flash(f'Item {item.serial_number} successfully re-entered into inventory stock!')
+    return redirect(url_for('report'))
 
 @app.route('/bulk_action', methods=['POST'])
 @login_required
@@ -393,170 +359,136 @@ def bulk_action():
     db.session.commit()
     flash(f'Successfully processed bulk {action} on {updated_count} selected item(s)!')
     return redirect(url_for('report'))
-@app.route('/report')
+
+@app.route('/quick_exit/<int:item_id>', methods=['POST'])
 @login_required
-def report():
-    selected_model = request.args.get('model_filter', '')
-    selected_property = request.args.get('property_filter', '')
-    search_query = request.args.get('search_query', '').strip()
-
-    # Base query joined across related tables for comprehensive searching
-    query = Item.query.outerjoin(Category).outerjoin(PropertyClient).outerjoin(Transaction)
-
-    if selected_model:
-        query = query.filter(Category.model == selected_model)
-    if selected_property and selected_property.isdigit():
-        query = query.filter(Item.property_id == int(selected_property))
-
-    # Global multi-field search logic
-    if search_query:
-        search_pattern = f'%{search_query}%'
-        query = query.filter(
-            or_(
-                Item.serial_number.ilike(search_pattern),
-                Item.status.ilike(search_pattern),
-                Category.name.ilike(search_pattern),
-                Category.vendor.ilike(search_pattern),
-                Category.model.ilike(search_pattern),
-                PropertyClient.name.ilike(search_pattern),
-                Transaction.comment.ilike(search_pattern)
-            )
-        )
-
-    # Deduplicate items in case multiple transaction rows match the search query
-    filtered_items = query.distinct().all()
-
-    # Enrich item objects with entrance/exit timestamps and latest comments
-    enriched_items = []
-    for item in filtered_items:
-        entrance_tx = Transaction.query.filter_by(item_id=item.id, action='ENTRANCE').order_by(Transaction.timestamp.asc()).first()
-        exit_tx = Transaction.query.filter_by(item_id=item.id, action='EXIT').order_by(Transaction.timestamp.desc()).first()
-        latest_tx = Transaction.query.filter_by(item_id=item.id).order_by(Transaction.timestamp.desc()).first()
-
-        enriched_items.append({
-            'obj': item,
-            'entrance_date': entrance_tx.timestamp.strftime('%Y-%m-%d %H:%M') if entrance_tx else '-',
-            'exit_date': exit_tx.timestamp.strftime('%Y-%m-%d %H:%M') if (exit_tx and item.status == 'EXITED') else '-',
-            'latest_comment': latest_tx.comment if (latest_tx and latest_tx.comment) else '-'
-        })
-
-    all_categories = Category.query.all()
-    all_properties = PropertyClient.query.all()
-    all_transactions = Transaction.query.order_by(Transaction.timestamp.desc()).all()
-
-    return render_template(
-        'report.html', 
-        items=enriched_items, 
-        categories=all_categories, 
-        properties=all_properties, 
-        transactions=all_transactions,
-        selected_model=selected_model,
-        selected_property=selected_property,
-        search_query=search_query
-    )
+def quick_exit(item_id):
+    item = Item.query.get_or_404(item_id)
+    comment = request.form.get('comment', '').strip()
+    item.status = 'EXITED'
+    db.session.add(Transaction(item_id=item.id, user_id=current_user.id, action='EXIT', comment=comment or 'Quick Exit from Report page'))
+    db.session.commit()
+    flash(f'Device {item.serial_number} marked as EXITED.')
+    return redirect(url_for('report'))
 
 @app.route('/edit_item/<int:item_id>', methods=['POST'])
 @login_required
 def edit_item(item_id):
     item = Item.query.get_or_404(item_id)
-    
     new_serial = request.form.get('serial_number', '').strip()
-    new_category_id = request.form.get('category_id')
-    new_property_id = request.form.get('property_id')
-    new_status = request.form.get('status')
-    new_comment = request.form.get('comment', '').strip()
+    category_id = request.form.get('category_id')
+    property_id = request.form.get('property_id')
+    status = request.form.get('status')
+    comment = request.form.get('comment', '').strip()
 
-    # Ensure unique serial constraint if changed
-    existing_item = Item.query.filter(Item.serial_number == new_serial, Item.id != item_id).first()
-    if existing_item:
-        flash(f'Error: Serial Number {new_serial} is already assigned to another item!')
-        return redirect(url_for('report'))
+    if new_serial and new_serial != item.serial_number:
+        if Item.query.filter_by(serial_number=new_serial).first():
+            flash(f'Error: Serial number {new_serial} already exists!')
+            return redirect(url_for('report'))
+        item.serial_number = new_serial
 
-    item.serial_number = new_serial
-    if new_category_id and new_category_id.isdigit():
-        item.category_id = int(new_category_id)
-    
-    item.property_id = int(new_property_id) if new_property_id and new_property_id.isdigit() else None
-    if new_status in ['IN_STOCK', 'EXITED']:
-        item.status = new_status
+    if category_id and category_id.isdigit():
+        item.category_id = int(category_id)
 
-    # Update or insert a comment entry into transaction audit log
-    latest_tx = Transaction.query.filter_by(item_id=item.id).order_by(Transaction.timestamp.desc()).first()
-    if latest_tx:
-        latest_tx.comment = new_comment
-    else:
-        new_tx = Transaction(item_id=item.id, user_id=current_user.id, action=item.status, comment=new_comment)
-        db.session.add(new_tx)
+    item.property_id = int(property_id) if (property_id and property_id.isdigit()) else None
+    item.status = status
+
+    if comment:
+        latest_tx = Transaction.query.filter_by(item_id=item.id).order_by(Transaction.timestamp.desc()).first()
+        if latest_tx:
+            latest_tx.comment = comment
 
     db.session.commit()
-    flash(f'Device details for {new_serial} updated successfully!')
+    flash(f'Device details for {item.serial_number} updated successfully!')
     return redirect(url_for('report'))
 
-@app.route('/item_history/<int:item_id>')
-@login_required
-def item_history(item_id):
-    item = Item.query.get_or_404(item_id)
-    tx_list = Transaction.query.filter_by(item_id=item.id).order_by(Transaction.timestamp.desc()).all()
-    
-    history_data = []
-    for tx in tx_list:
-        history_data.append({
-            'timestamp': tx.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-            'action': tx.action,
-            'user': tx.user.username if tx.user else 'System',
-            'comment': tx.comment or '-'
-        })
-
-    return jsonify({
-        'serial_number': item.serial_number,
-        'model': f"{item.category_rel.vendor} {item.category_rel.model}",
-        'history': history_data
-    })
-
-
-@app.route('/reenter_item/<int:item_id>', methods=['POST'])
-@login_required
-def reenter_item(item_id):
-    item = Item.query.get_or_404(item_id)
-    comment = request.form.get('comment', 'Re-entered into warehouse stock').strip()
-
-    item.status = 'IN_STOCK'
-    
-    # Record new ENTRANCE event in audit history
-    new_tx = Transaction(
-        item_id=item.id,
-        user_id=current_user.id,
-        action='ENTRANCE',
-        comment=comment
-    )
-    db.session.add(new_tx)
-    db.session.commit()
-
-    flash(f'Item {item.serial_number} successfully re-entered into inventory stock!')
-    return redirect(url_for('report'))
-    
 @app.route('/delete_item/<int:item_id>', methods=['POST'])
 @login_required
 def delete_item(item_id):
     item = Item.query.get_or_404(item_id)
-    
-    # Remove associated transaction history before deleting item
-    Transaction.query.filter_by(item_id=item_id).delete()
-    
     serial = item.serial_number
+    Transaction.query.filter_by(item_id=item.id).delete()
     db.session.delete(item)
     db.session.commit()
-    
-    flash(f'Item {serial} and its transaction history deleted successfully!')
+    flash(f'Item {serial} deleted permanently.')
     return redirect(url_for('report'))
 
+@app.route('/manage', methods=['GET', 'POST'])
+@login_required
+def manage_metadata():
+    if request.method == 'POST':
+        form_type = request.form.get('form_type')
+        if form_type == 'category':
+            name = request.form.get('name', '').strip()
+            vendor = request.form.get('vendor', '').strip()
+            model = request.form.get('model', '').strip()
+            if name and vendor and model:
+                db.session.add(Category(name=name, vendor=vendor, model=model))
+                db.session.commit()
+                flash('Category added!')
+        elif form_type == 'property':
+            prop_name = request.form.get('property_name', '').strip()
+            if prop_name:
+                db.session.add(PropertyClient(name=prop_name))
+                db.session.commit()
+                flash('Property / Client added!')
+        return redirect(url_for('manage_metadata'))
+
+    categories = Category.query.all()
+    properties = PropertyClient.query.all()
+    return render_template('manage_metadata.html', categories=categories, properties=properties)
+
+@app.route('/bulk_import', methods=['GET', 'POST'])
+@login_required
+def bulk_import():
+    if request.method == 'POST':
+        category_id = request.form.get('category_id')
+        property_id = request.form.get('property_id')
+        file = request.files.get('file')
+
+        if not category_id or not file:
+            flash('Category and file are required!')
+            return redirect(url_for('bulk_import'))
+
+        filename = file.filename.lower()
+        serials = []
+
+        try:
+            if filename.endswith('.csv') or filename.endswith('.txt'):
+                df = pd.read_csv(file, header=None)
+                serials = df[0].dropna().astype(str).str.strip().tolist()
+            elif filename.endswith('.xlsx') or filename.endswith('.xls'):
+                df = pd.read_excel(file, header=None)
+                serials = df[0].dropna().astype(str).str.strip().tolist()
+            else:
+                flash('Unsupported file format!')
+                return redirect(url_for('bulk_import'))
+        except Exception as e:
+            flash(f'Error processing file: {str(e)}')
+            return redirect(url_for('bulk_import'))
+
+        imported_count = 0
+        for sn in serials:
+            if not sn or sn.lower() in ['serial number', 'sn', 'serial']:
+                continue
+
+            item = Item.query.filter_by(serial_number=sn).first()
+            if not item:
+                item = Item(serial_number=sn, category_id=int(category_id), status='IN_STOCK')
+                if property_id and property_id.isdigit():
+                    item.property_id = int(property_id)
+                db.session.add(item)
+                db.session.flush()
+                db.session.add(Transaction(item_id=item.id, user_id=current_user.id, action='ENTRANCE', comment='Bulk File Import'))
+                imported_count += 1
+
+        db.session.commit()
+        flash(f'Successfully imported {imported_count} new serials!')
+        return redirect(url_for('report'))
+
+    categories = Category.query.all()
+    properties = PropertyClient.query.all()
+    return render_template('bulk_import.html', categories=categories, properties=properties)
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-        if not User.query.filter_by(username='admin').first():
-            hashed_pw = generate_password_hash('admin123', method='pbkdf2:sha256')
-            db.session.add(User(username='admin', password=hashed_pw))
-            db.session.commit()
-            
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5000, debug=True)
