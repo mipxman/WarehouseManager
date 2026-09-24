@@ -10,13 +10,19 @@ from flask_login import LoginManager, UserMixin, login_user, login_required, log
 from sqlalchemy import or_, text
 import pandas as pd
 
+# --- ABSOLUTE BASE PATH CONFIGURATION ---
+basedir = os.path.abspath(os.path.dirname(__file__))
+
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret_key'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'warehouse.db')
+app.config['SECRET_KEY'] = 'necbologna_secret_key_2026'
+
+# Lock SQLite directly to /app/warehouse.db on the mounted host volume
+db_path = os.path.join(basedir, 'warehouse.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# --- UPLOAD FOLDER CONFIGURATION ---
-UPLOAD_FOLDER = os.path.join(app.root_path, 'uploads')
+# File uploads directory
+UPLOAD_FOLDER = os.path.join(basedir, 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'pdf'}
@@ -26,7 +32,6 @@ def allowed_file(filename):
 
 def save_attachment(file_obj):
     if file_obj and file_obj.filename != '' and allowed_file(file_obj.filename):
-        ext = file_obj.filename.rsplit('.', 1)[1].lower()
         unique_name = f"{uuid.uuid4().hex[:10]}_{secure_filename(file_obj.filename)}"
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
         file_obj.save(file_path)
@@ -86,11 +91,11 @@ class Transaction(db.Model):
     item = db.relationship('Item', backref=db.backref('transactions', lazy=True))
     user = db.relationship('User', backref=db.backref('transactions', lazy=True))
 
-# Auto-migrate DB schema
+# --- AUTO MIGRATION & INITIAL DATA ---
 with app.app_context():
     db.create_all()
     try:
-        db.session.execute(text("ALTER TABLE transaction ADD COLUMN attachment VARCHAR(255)"))
+        db.session.execute(text('ALTER TABLE "transaction" ADD COLUMN attachment TEXT'))
         db.session.commit()
     except Exception:
         db.session.rollback()
@@ -101,6 +106,11 @@ with app.app_context():
         db.session.commit()
 
 # --- ROUTES ---
+
+@app.route('/uploads/<path:filename>')
+@login_required
+def download_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 @app.route('/')
 @login_required
@@ -135,12 +145,6 @@ def index():
         category_counts=category_counts
     )
 
-
-@app.route('/uploads/<path:filename>')
-@login_required
-def download_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -160,6 +164,7 @@ def login():
 def logout():
     logout_user()
     return redirect(url_for('login'))
+
 @app.route('/transaction', methods=['GET', 'POST'])
 @login_required
 def transaction():
@@ -176,7 +181,6 @@ def transaction():
             flash('Error: Serial number is required!')
             return redirect(url_for('transaction'))
 
-        # Parsing della data/ora personalizzata
         if custom_time_str:
             try:
                 event_timestamp = datetime.strptime(custom_time_str, '%Y-%m-%dT%H:%M')
@@ -217,7 +221,7 @@ def transaction():
             action=action, 
             comment=comment,
             attachment=uploaded_filename,
-            timestamp=event_timestamp  # Salva la data scelta dall'utente
+            timestamp=event_timestamp
         )
         db.session.add(tx)
         db.session.commit()
@@ -228,8 +232,6 @@ def transaction():
     categories = Category.query.all()
     properties = PropertyClient.query.all()
     return render_template('log_transaction.html', categories=categories, properties=properties)
-
-
 
 @app.route('/report')
 @login_required
@@ -311,6 +313,45 @@ def item_history(item_id):
         'model': f"{item.category_rel.vendor} {item.category_rel.model}",
         'history': history_data
     })
+
+@app.route('/manage', methods=['GET', 'POST'])
+@login_required
+def manage_metadata():
+    if request.method == 'POST':
+        form_type = request.form.get('form_type')
+        
+        if form_type == 'category':
+            name = request.form.get('name', '').strip()
+            vendor = request.form.get('vendor', '').strip()
+            model = request.form.get('model', '').strip()
+            if name and vendor and model:
+                db.session.add(Category(name=name, vendor=vendor, model=model))
+                db.session.commit()
+                flash('Category added successfully!')
+
+        elif form_type == 'property':
+            prop_name = request.form.get('property_name', '').strip()
+            if prop_name:
+                if not PropertyClient.query.filter_by(name=prop_name).first():
+                    db.session.add(PropertyClient(name=prop_name))
+                    db.session.commit()
+                    flash('Property / Client added successfully!')
+
+        elif form_type == 'user':
+            username = request.form.get('username', '').strip()
+            password = request.form.get('password', '').strip()
+            if username and password:
+                if not User.query.filter_by(username=username).first():
+                    db.session.add(User(username=username, password=generate_password_hash(password)))
+                    db.session.commit()
+                    flash(f'User "{username}" created successfully!')
+
+        return redirect(url_for('manage_metadata'))
+
+    categories = Category.query.all()
+    properties = PropertyClient.query.all()
+    users = User.query.all()
+    return render_template('manage_metadata.html', categories=categories, properties=properties, users=users)
 
 @app.route('/reenter_item/<int:item_id>', methods=['POST'])
 @login_required
@@ -433,48 +474,6 @@ def delete_item(item_id):
     db.session.commit()
     flash(f'Item {serial} deleted permanently.')
     return redirect(url_for('report'))
-    
-@app.route('/manage', methods=['GET', 'POST'])
-@login_required
-def manage_metadata():
-    if request.method == 'POST':
-        form_type = request.form.get('form_type')
-        
-        if form_type == 'category':
-            name = request.form.get('name', '').strip()
-            vendor = request.form.get('vendor', '').strip()
-            model = request.form.get('model', '').strip()
-            if name and vendor and model:
-                db.session.add(Category(name=name, vendor=vendor, model=model))
-                db.session.commit()
-                flash('Category added successfully!')
-
-        elif form_type == 'property':
-            prop_name = request.form.get('property_name', '').strip()
-            if prop_name:
-                db.session.add(PropertyClient(name=prop_name))
-                db.session.commit()
-                flash('Property / Client added successfully!')
-
-        elif form_type == 'user':
-            username = request.form.get('username', '').strip()
-            password = request.form.get('password', '').strip()
-            if username and password:
-                if User.query.filter_by(username=username).first():
-                    flash('User already exists!')
-                else:
-                    new_u = User(username=username, password=generate_password_hash(password))
-                    db.session.add(new_u)
-                    db.session.commit()
-                    flash(f'User {username} created!')
-                    
-        return redirect(url_for('manage_metadata'))
-
-    categories = Category.query.all()
-    properties = PropertyClient.query.all()
-    users = User.query.all()
-    return render_template('manage_metadata.html', categories=categories, properties=properties, users=users)
-
 
 @app.route('/bulk_import', methods=['GET', 'POST'])
 @login_required
