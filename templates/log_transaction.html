@@ -14,10 +14,10 @@
         <div id="reader" style="width: 100%; min-height: 250px; display: none; margin: 0 auto; background:#111;"></div>
         
         <div style="margin-top: 10px;">
-            <button type="button" id="start-btn" onclick="startCamera()" style="background: transparent; border:1px solid #28a745; color:#28a745; margin-bottom: 0; width: auto; padding: 10px 20px;">
+            <button type="button" id="start-btn" onclick="startCamera()" style="background: transparent; border:1px solid #28a745; color:#28a745; margin-bottom: 0; width: auto; padding: 10px 20px; cursor:pointer;">
                 📷 Open Live Camera Scanner
             </button>
-            <button type="button" id="stop-btn" onclick="stopCamera()" style="background: transparent; border:1px solid #dc3545; color:#dc3545; display: none; margin-bottom: 0; width: auto; padding: 10px 20px;">
+            <button type="button" id="stop-btn" onclick="stopCamera()" style="background: transparent; border:1px solid #dc3545; color:#dc3545; display: none; margin-bottom: 0; width: auto; padding: 10px 20px; cursor:pointer;">
                 ⏹️ Stop Camera
             </button>
         </div>
@@ -27,7 +27,7 @@
     </div>
 
     <!-- Movement Logging Form -->
-    <form method="POST">
+    <form method="POST" enctype="multipart/form-data">
         <label><strong>Action Type:</strong></label>
         <select name="action" id="actionSelect" onchange="toggleCategory()">
             <option value="ENTRANCE">ENTRANCE (In Stock)</option>
@@ -44,6 +44,10 @@
             </label>
         </div>
         <div id="ocr-status" style="font-size: 13px; color: #007bff; font-weight: bold; margin-top: -8px; margin-bottom: 10px;"></div>
+
+        <!-- Attachment Input -->
+        <label><strong>📎 Order Factor / Invoice / Item Photo (PDF, JPG, PNG):</strong></label>
+        <input type="file" name="attachment" accept=".pdf,image/*" style="background:#f8f9fa; padding:8px; border:1px solid #ccc; border-radius:4px; margin-bottom:12px; width:100%; box-sizing:border-box;">
 
         <div id="entrance_fields">
             <label>Category / Model:</label>
@@ -68,7 +72,7 @@
         <label>Comments / Notes:</label>
         <textarea name="comment" rows="2" placeholder="Write exit or entrance details..."></textarea>
 
-        <button type="submit" style="background: transparent; border:1px solid #007bff; color:#007bff; margin-top: 10px;">Submit Movement</button>
+        <button type="submit" style="background: transparent; border:1px solid #007bff; color:#007bff; margin-top: 10px; cursor:pointer;">Submit Movement</button>
     </form>
 </div>
 
@@ -85,10 +89,8 @@
             html5QrCode = new Html5Qrcode("reader");
         }
 
-        // Enumerate video inputs for mobile device compatibility
         Html5Qrcode.getCameras().then(devices => {
             if (devices && devices.length) {
-                // Prefer rear camera
                 let backCamera = devices.find(device => device.label.toLowerCase().includes('back') || device.label.toLowerCase().includes('environment'));
                 let cameraId = backCamera ? backCamera.id : devices[devices.length - 1].id;
 
@@ -99,7 +101,6 @@
                 ).then(() => {
                     document.getElementById('camera-status').innerText = "Camera Active. Align barcode inside box.";
                 }).catch(err => {
-                    // Fallback to generic constraints if camera ID fails
                     html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 260, height: 90 } }, onScanSuccess);
                 });
             }
@@ -164,10 +165,10 @@
                             }
                         })
                         .catch(() => {
-                            statusDiv.innerText = "❌ OCR require internet connection. Please type serial manually or upload a bulk .csv/.txt file.";
+                            statusDiv.innerText = "❌ OCR requires internet connection. Please type serial manually.";
                         });
                 } else {
-                    statusDiv.innerText = "❌ Offline mode active. Use Bulk File Upload or type serial manually.";
+                    statusDiv.innerText = "❌ Offline mode active. Type serial manually.";
                 }
             };
             img.src = event.target.result;
