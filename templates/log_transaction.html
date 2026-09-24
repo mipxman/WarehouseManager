@@ -69,6 +69,18 @@
             </select>
         </div>
 
+        <label><strong>🕒 Movement Date & Time (Auto-filled, Editable):</strong></label>
+        <input type="datetime-local" name="custom_timestamp" id="movement_time_input" style="background:#f8f9fa; padding:8px; border:1px solid #ccc; border-radius:4px; margin-bottom:12px; width:100%; box-sizing:border-box;">
+
+        <script>
+            // Auto-compila la data e l'ora attuale locale
+            window.addEventListener('DOMContentLoaded', () => {
+                const now = new Date();
+                now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                document.getElementById('movement_time_input').value = now.toISOString().slice(0, 16);
+            });
+        </script>
+
         <label>Comments / Notes:</label>
         <textarea name="comment" rows="2" placeholder="Write exit or entrance details..."></textarea>
 

@@ -224,6 +224,9 @@
                 <option value="IN_STOCK">IN_STOCK</option>
                 <option value="EXITED">EXITED</option>
             </select>
+            
+            <label><strong>🕒 Transaction Date & Time:</strong></label>
+            <input type="datetime-local" name="custom_timestamp" id="edit_timestamp" style="background:#f8f9fa; padding:8px; border:1px solid #ccc; border-radius:4px; margin-bottom:12px; width:100%;">
 
             <label><strong>Comment / Note:</strong></label>
             <textarea name="comment" id="edit_comment" rows="3" placeholder="Add or update notes for this entry..."></textarea>
@@ -336,5 +339,25 @@
     function closeEditModal() {
         document.getElementById('editModal').style.display = 'none';
     }
+
+    function openEditModal(id, serial, categoryId, propertyId, status, comment, timestamp) {
+    document.getElementById('editForm').action = '/edit_item/' + id;
+    document.getElementById('edit_serial').value = serial;
+    document.getElementById('edit_category').value = categoryId;
+    document.getElementById('edit_property').value = propertyId;
+    document.getElementById('edit_status').value = status;
+    document.getElementById('edit_comment').value = comment;
+    
+    // Se presente la data, la formatta per l'input HTML5
+    if (timestamp) {
+        document.getElementById('edit_timestamp').value = timestamp.replace(' ', 'T').slice(0, 16);
+    } else {
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        document.getElementById('edit_timestamp').value = now.toISOString().slice(0, 16);
+    }
+
+    document.getElementById('editModal').style.display = 'flex';
+}
 </script>
 {% endblock %}

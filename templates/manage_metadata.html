@@ -23,4 +23,31 @@
         <button type="submit" style="padding:8px 15px; background:#007bff; color:white; border:none;">Add Property/Client</button>
     </form>
 </div>
+
+<div class="card" style="margin-top:20px;">
+    <h3>👤 User Management (Add Admin / User)</h3>
+    <form method="POST">
+        <input type="hidden" name="form_type" value="user">
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+            <div style="flex:1; min-width:200px;">
+                <label>Username:</label>
+                <input type="text" name="username" required placeholder="New username..." style="margin:0;">
+            </div>
+            <div style="flex:1; min-width:200px;">
+                <label>Password:</label>
+                <input type="password" name="password" required placeholder="Password..." style="margin:0;">
+            </div>
+            <button type="submit" style="background:transparent; border:1px solid #28a745; color:#28a745; padding:10px 20px; width:auto; margin:0; cursor:pointer;">
+                ➕ Create User
+            </button>
+        </div>
+    </form>
+
+    <h4 style="margin-top:15px; margin-bottom:8px;">Registered System Users:</h4>
+    <ul>
+        {% for u in users %}
+        <li><strong>{{ u.username }}</strong></li>
+        {% endfor %}
+    </ul>
+</div>
 {% endblock %}
