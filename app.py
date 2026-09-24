@@ -14,7 +14,7 @@ import pandas as pd
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'necbologna_secret_key_2026'
+app.config['SECRET_KEY'] = 'MySecureKEY_PERDB'
 
 # Lock SQLite directly to /app/warehouse.db on the mounted host volume
 db_path = os.path.join(basedir, 'warehouse.db')
