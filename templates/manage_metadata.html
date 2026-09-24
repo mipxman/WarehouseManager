@@ -1,53 +1,129 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="card">
-    <h2>1. Add Category (Vendor & Model)</h2>
-    <form method="POST">
-        <input type="hidden" name="form_type" value="add_category">
-        <p><label>Category Type (e.g., Switch, Firewall):</label><br>
-        <input type="text" name="name" required style="width:95%; padding:8px;"></p>
-        <p><label>Vendor (e.g., Cisco, Fortinet):</label><br>
-        <input type="text" name="vendor" required style="width:95%; padding:8px;"></p>
-        <p><label>Model (e.g., Catalyst 2960X, FG-60F):</label><br>
-        <input type="text" name="model" required style="width:95%; padding:8px;"></p>
-        <button type="submit" style="padding:8px 15px; background:#28a745; color:white; border:none;">Add Category</button>
-    </form>
-</div>
+<h2>Manage Metadata & Users</h2>
 
-<div class="card">
-    <h2>2. Add Property / Client</h2>
-    <form method="POST">
-        <input type="hidden" name="form_type" value="add_property">
-        <p><label>Client or Property Name:</label><br>
-        <input type="text" name="property_name" required style="width:95%; padding:8px;"></p>
-        <button type="submit" style="padding:8px 15px; background:#007bff; color:white; border:none;">Add Property/Client</button>
-    </form>
-</div>
+<div style="display: flex; gap: 20px; flex-wrap: wrap;">
+    <!-- 1. Add Category -->
+    <div class="card" style="flex: 1; min-width: 280px;">
+        <h3>1. Add Category (Vendor & Model)</h3>
+        <form method="POST" action="{{ url_for('manage_metadata') }}">
+            <input type="hidden" name="form_type" value="category">
+            
+            <label>Category Type (e.g. Switch, Firewall):</label>
+            <input type="text" name="name" required placeholder="Switch, AP, Cable...">
 
-<div class="card" style="margin-top:20px;">
-    <h3>👤 User Management (Add Admin / User)</h3>
-    <form method="POST">
-        <input type="hidden" name="form_type" value="user">
-        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
-            <div style="flex:1; min-width:200px;">
-                <label>Username:</label>
-                <input type="text" name="username" required placeholder="New username..." style="margin:0;">
-            </div>
-            <div style="flex:1; min-width:200px;">
-                <label>Password:</label>
-                <input type="password" name="password" required placeholder="Password..." style="margin:0;">
-            </div>
-            <button type="submit" style="background:transparent; border:1px solid #28a745; color:#28a745; padding:10px 20px; width:auto; margin:0; cursor:pointer;">
-                ➕ Create User
+            <label>Vendor (e.g. Cisco, Fortinet):</label>
+            <input type="text" name="vendor" required placeholder="Cisco, Fortinet...">
+
+            <label>Model (e.g. Catalyst 2960X, FG-60F):</label>
+            <input type="text" name="model" required placeholder="Model name...">
+
+            <button type="submit" style="background:#28a745; color:#fff; border:none; padding:10px; width:100%; border-radius:5px; font-weight:bold; margin-top:10px; cursor:pointer;">
+                Add Category
             </button>
-        </div>
-    </form>
+        </form>
+    </div>
 
-    <h4 style="margin-top:15px; margin-bottom:8px;">Registered System Users:</h4>
-    <ul>
-        {% for u in users %}
-        <li><strong>{{ u.username }}</strong></li>
-        {% endfor %}
-    </ul>
+    <!-- 2. Add Property -->
+    <div class="card" style="flex: 1; min-width: 280px;">
+        <h3>2. Add Property / Client</h3>
+        <form method="POST" action="{{ url_for('manage_metadata') }}">
+            <input type="hidden" name="form_type" value="property">
+
+            <label>Client or Property Name:</label>
+            <input type="text" name="property_name" required placeholder="e.g. COOP, N&C...">
+
+            <button type="submit" style="background:#007bff; color:#fff; border:none; padding:10px; width:100%; border-radius:5px; font-weight:bold; margin-top:10px; cursor:pointer;">
+                Add Property/Client
+            </button>
+        </form>
+    </div>
+
+    <!-- 3. Add User -->
+    <div class="card" style="flex: 1; min-width: 280px;">
+        <h3>3. Add System User / Admin</h3>
+        <form method="POST" action="{{ url_for('manage_metadata') }}">
+            <input type="hidden" name="form_type" value="user">
+
+            <label>Username:</label>
+            <input type="text" name="username" required placeholder="New username...">
+
+            <label>Password:</label>
+            <input type="password" name="password" required placeholder="Password...">
+
+            <button type="submit" style="background:#17a2b8; color:#fff; border:none; padding:10px; width:100%; border-radius:5px; font-weight:bold; margin-top:10px; cursor:pointer;">
+                Add User
+            </button>
+        </form>
+    </div>
+</div>
+
+<hr style="margin: 30px 0; border:0; border-top:1px solid #ccc;">
+
+<!-- Tables to Display Existing Data -->
+<h3>Registered Categories ({{ categories|length }})</h3>
+<div class="table-container" style="margin-bottom: 25px;">
+    <table>
+        <thead>
+            <tr>
+                <th>Category Name</th>
+                <th>Vendor</th>
+                <th>Model</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for cat in categories %}
+            <tr>
+                <td>{{ cat.name }}</td>
+                <td>{{ cat.vendor }}</td>
+                <td>{{ cat.model }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" style="text-align:center; color:#666;">No categories registered yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<h3>Registered Properties / Clients ({{ properties|length }})</h3>
+<div class="table-container" style="margin-bottom: 25px;">
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Property / Client Name</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for prop in properties %}
+            <tr>
+                <td>{{ prop.id }}</td>
+                <td><strong>{{ prop.name }}</strong></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="2" style="text-align:center; color:#666;">No properties registered yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<h3>Registered System Users ({{ users|length }})</h3>
+<div class="table-container">
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Username</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td>{{ u.id }}</td>
+                <td><strong>{{ u.username }}</strong></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
 {% endblock %}
