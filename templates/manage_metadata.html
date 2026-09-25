@@ -18,7 +18,7 @@
             <label>Model (e.g. Catalyst 2960X, FG-60F):</label>
             <input type="text" name="model" required placeholder="Model name...">
 
-            <button type="submit" style="background:#28a745; color:#fff; border:none; padding:10px; width:100%; border-radius:5px; font-weight:bold; margin-top:10px; cursor:pointer;">
+            <button type="submit" style="background:transparent; border:1px solid #28a745; color:#28a745; padding:10px; width:100%; border-radius:5px; font-weight:bold; margin-top:10px; cursor:pointer;">
                 Add Category
             </button>
         </form>
@@ -33,7 +33,7 @@
             <label>Client or Property Name:</label>
             <input type="text" name="property_name" required placeholder="e.g. COOP, N&C...">
 
-            <button type="submit" style="background:#007bff; color:#fff; border:none; padding:10px; width:100%; border-radius:5px; font-weight:bold; margin-top:10px; cursor:pointer;">
+            <button type="submit" style="background:transparent; border:1px solid #007bff; color:#007bff; padding:10px; width:100%; border-radius:5px; font-weight:bold; margin-top:10px; cursor:pointer;">
                 Add Property/Client
             </button>
         </form>
@@ -51,7 +51,7 @@
             <label>Password:</label>
             <input type="password" name="password" required placeholder="Password...">
 
-            <button type="submit" style="background:#17a2b8; color:#fff; border:none; padding:10px; width:100%; border-radius:5px; font-weight:bold; margin-top:10px; cursor:pointer;">
+            <button type="submit" style="background:transparent; border:1px solid #17a2b8; color:#17a2b8; padding:10px; width:100%; border-radius:5px; font-weight:bold; margin-top:10px; cursor:pointer;">
                 Add User
             </button>
         </form>
@@ -60,7 +60,7 @@
 
 <hr style="margin: 30px 0; border:0; border-top:1px solid #ccc;">
 
-<!-- Tables to Display Existing Data -->
+<!-- Registered Categories Table -->
 <h3>Registered Categories ({{ categories|length }})</h3>
 <div class="table-container" style="margin-bottom: 25px;">
     <table>
@@ -69,6 +69,7 @@
                 <th>Category Name</th>
                 <th>Vendor</th>
                 <th>Model</th>
+                <th style="width:180px; text-align:center;">Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -77,14 +78,27 @@
                 <td>{{ cat.name }}</td>
                 <td>{{ cat.vendor }}</td>
                 <td>{{ cat.model }}</td>
+                <td style="text-align:center;">
+                    <div style="display:flex; gap:6px; justify-content:center;">
+                        <button type="button" onclick="openEditCategoryModal('{{ cat.id }}', '{{ cat.name }}', '{{ cat.vendor }}', '{{ cat.model }}')" style="background:transparent; border:1px solid #ffc107; color:#d39e00; padding:4px 10px; border-radius:4px; font-size:13px; font-weight:bold; cursor:pointer;" title="Edit Category">
+                            ✏️ Edit
+                        </button>
+                        <form action="{{ url_for('delete_category', cat_id=cat.id) }}" method="POST" onsubmit="return confirm('Delete category {{ cat.vendor }} {{ cat.model }}?');" style="margin:0;">
+                            <button type="submit" style="background:transparent; border:1px solid #dc3545; color:#dc3545; padding:4px 10px; border-radius:4px; font-size:13px; font-weight:bold; cursor:pointer;" title="Delete Category">
+                                🗑️ Delete
+                            </button>
+                        </form>
+                    </div>
+                </td>
             </tr>
             {% else %}
-            <tr><td colspan="3" style="text-align:center; color:#666;">No categories registered yet.</td></tr>
+            <tr><td colspan="4" style="text-align:center; color:#666;">No categories registered yet.</td></tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
 
+<!-- Registered Properties Table -->
 <h3>Registered Properties / Clients ({{ properties|length }})</h3>
 <div class="table-container" style="margin-bottom: 25px;">
     <table>
@@ -92,6 +106,7 @@
             <tr>
                 <th>ID</th>
                 <th>Property / Client Name</th>
+                <th style="width:180px; text-align:center;">Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -99,14 +114,27 @@
             <tr>
                 <td>{{ prop.id }}</td>
                 <td><strong>{{ prop.name }}</strong></td>
+                <td style="text-align:center;">
+                    <div style="display:flex; gap:6px; justify-content:center;">
+                        <button type="button" onclick="openEditPropertyModal('{{ prop.id }}', '{{ prop.name }}')" style="background:transparent; border:1px solid #ffc107; color:#d39e00; padding:4px 10px; border-radius:4px; font-size:13px; font-weight:bold; cursor:pointer;" title="Edit Property">
+                            ✏️ Edit
+                        </button>
+                        <form action="{{ url_for('delete_property', prop_id=prop.id) }}" method="POST" onsubmit="return confirm('Delete property/client {{ prop.name }}? Linked items will become unassigned.');" style="margin:0;">
+                            <button type="submit" style="background:transparent; border:1px solid #dc3545; color:#dc3545; padding:4px 10px; border-radius:4px; font-size:13px; font-weight:bold; cursor:pointer;" title="Delete Property">
+                                🗑️ Delete
+                            </button>
+                        </form>
+                    </div>
+                </td>
             </tr>
             {% else %}
-            <tr><td colspan="2" style="text-align:center; color:#666;">No properties registered yet.</td></tr>
+            <tr><td colspan="3" style="text-align:center; color:#666;">No properties registered yet.</td></tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
 
+<!-- Registered System Users Table -->
 <h3>Registered System Users ({{ users|length }})</h3>
 <div class="table-container">
     <table>
@@ -114,6 +142,7 @@
             <tr>
                 <th>ID</th>
                 <th>Username</th>
+                <th style="width:280px; text-align:center;">Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -121,9 +150,113 @@
             <tr>
                 <td>{{ u.id }}</td>
                 <td><strong>{{ u.username }}</strong></td>
+                <td style="text-align:center;">
+                    <div style="display:flex; gap:6px; justify-content:center;">
+                        <button type="button" onclick="openChangePasswordModal('{{ u.id }}', '{{ u.username }}')" style="background:transparent; border:1px solid #17a2b8; color:#17a2b8; padding:4px 10px; border-radius:4px; font-size:13px; font-weight:bold; cursor:pointer;">
+                            🔑 Password
+                        </button>
+                        {% if u.id != current_user.id %}
+                        <form action="{{ url_for('delete_user', user_id=u.id) }}" method="POST" onsubmit="return confirm('Permanently delete user account {{ u.username }}?');" style="margin:0;">
+                            <button type="submit" style="background:transparent; border:1px solid #dc3545; color:#dc3545; padding:4px 10px; border-radius:4px; font-size:13px; font-weight:bold; cursor:pointer;" title="Delete User">
+                                🗑️ Delete
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
+
+<!-- Edit Category Modal -->
+<div id="editCategoryModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div class="card" style="width:90%; max-width:450px; background:#fff; padding:20px; border-radius:8px;">
+        <h3>✏️ Edit Category</h3>
+        <form id="editCategoryForm" method="POST">
+            <label><strong>Category Type:</strong></label>
+            <input type="text" name="name" id="edit_cat_name" required style="width:100%; box-sizing:border-box; margin-bottom:10px; padding:8px; border:1px solid #ccc; border-radius:4px;">
+
+            <label><strong>Vendor:</strong></label>
+            <input type="text" name="vendor" id="edit_cat_vendor" required style="width:100%; box-sizing:border-box; margin-bottom:10px; padding:8px; border:1px solid #ccc; border-radius:4px;">
+
+            <label><strong>Model:</strong></label>
+            <input type="text" name="model" id="edit_cat_model" required style="width:100%; box-sizing:border-box; margin-bottom:15px; padding:8px; border:1px solid #ccc; border-radius:4px;">
+
+            <div style="display:flex; gap:10px;">
+                <button type="submit" style="background:transparent; border:1px solid #28a745; color:#28a745; flex:1; padding:8px; border-radius:4px; font-weight:bold; cursor:pointer;">Save Category</button>
+                <button type="button" onclick="closeEditCategoryModal()" style="background:transparent; border:1px solid #6c757d; color:#6c757d; flex:1; padding:8px; border-radius:4px; font-weight:bold; cursor:pointer;">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Property Modal -->
+<div id="editPropertyModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div class="card" style="width:90%; max-width:400px; background:#fff; padding:20px; border-radius:8px;">
+        <h3>✏️ Edit Property / Client</h3>
+        <form id="editPropertyForm" method="POST">
+            <label><strong>Property / Client Name:</strong></label>
+            <input type="text" name="property_name" id="edit_prop_name" required style="width:100%; box-sizing:border-box; margin-bottom:15px; padding:8px; border:1px solid #ccc; border-radius:4px;">
+
+            <div style="display:flex; gap:10px;">
+                <button type="submit" style="background:transparent; border:1px solid #28a745; color:#28a745; flex:1; padding:8px; border-radius:4px; font-weight:bold; cursor:pointer;">Save Property</button>
+                <button type="button" onclick="closeEditPropertyModal()" style="background:transparent; border:1px solid #6c757d; color:#6c757d; flex:1; padding:8px; border-radius:4px; font-weight:bold; cursor:pointer;">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Change Password Modal -->
+<div id="changePasswordModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div class="card" style="width:90%; max-width:400px; background:#fff; padding:20px; border-radius:8px;">
+        <h3>🔑 Reset User Password</h3>
+        <p>Target User: <strong id="modal_username_display" style="color:#007bff;"></strong></p>
+        
+        <form id="changePasswordForm" method="POST">
+            <label><strong>New Password:</strong></label>
+            <input type="password" name="new_password" required placeholder="Enter new password..." style="width:100%; box-sizing:border-box; margin-bottom:15px; padding:8px; border:1px solid #ccc; border-radius:4px;">
+
+            <div style="display:flex; gap:10px;">
+                <button type="submit" style="background:transparent; border:1px solid #28a745; color:#28a745; flex:1; padding:8px; border-radius:4px; font-weight:bold; cursor:pointer;">Save Password</button>
+                <button type="button" onclick="closeChangePasswordModal()" style="background:transparent; border:1px solid #6c757d; color:#6c757d; flex:1; padding:8px; border-radius:4px; font-weight:bold; cursor:pointer;">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function openEditCategoryModal(id, name, vendor, model) {
+        document.getElementById('editCategoryForm').action = '/edit_category/' + id;
+        document.getElementById('edit_cat_name').value = name;
+        document.getElementById('edit_cat_vendor').value = vendor;
+        document.getElementById('edit_cat_model').value = model;
+        document.getElementById('editCategoryModal').style.display = 'flex';
+    }
+
+    function closeEditCategoryModal() {
+        document.getElementById('editCategoryModal').style.display = 'none';
+    }
+
+    function openEditPropertyModal(id, name) {
+        document.getElementById('editPropertyForm').action = '/edit_property/' + id;
+        document.getElementById('edit_prop_name').value = name;
+        document.getElementById('editPropertyModal').style.display = 'flex';
+    }
+
+    function closeEditPropertyModal() {
+        document.getElementById('editPropertyModal').style.display = 'none';
+    }
+
+    function openChangePasswordModal(userId, username) {
+        document.getElementById('changePasswordForm').action = '/change_user_password/' + userId;
+        document.getElementById('modal_username_display').innerText = username;
+        document.getElementById('changePasswordModal').style.display = 'flex';
+    }
+
+    function closeChangePasswordModal() {
+        document.getElementById('changePasswordModal').style.display = 'none';
+    }
+</script>
 {% endblock %}

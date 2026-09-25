@@ -1,6 +1,54 @@
 {% extends 'base.html' %}
 {% block content %}
-<h2>Inventory & Asset Reports</h2>
+
+<!-- Custom Styles for Uniform Action Toolbar -->
+<style>
+    .btn-tool {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        height: 38px;
+        padding: 0 16px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        text-decoration: none;
+        white-space: nowrap;
+        cursor: pointer;
+        box-sizing: border-box;
+        margin: 0;
+        line-height: 1;
+        transition: all 0.2s ease-in-out;
+    }
+    .btn-backup { background: transparent; border: 1px solid #28a745; color: #28a745; }
+    .btn-backup:hover { background: #28a745; color: #ffffff; }
+    
+    .btn-restore { background: transparent; border: 1px solid #ffc107; color: #d39e00; }
+    .btn-restore:hover { background: #ffc107; color: #212529; }
+    
+    .btn-export { background: transparent; border: 1px solid #17a2b8; color: #17a2b8; }
+    .btn-export:hover { background: #17a2b8; color: #ffffff; }
+</style>
+
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+    <h2 style="margin:0;">Inventory & Asset Reports</h2>
+
+    <!-- Clean, Justified Toolbar -->
+    <div style="display:flex; gap:10px; align-items:center;">
+        <a href="{{ url_for('backup_db') }}" class="btn-tool btn-backup" title="Download SQLite DB to local PC">
+            💾 Backup DB
+        </a>
+        
+        <button type="button" onclick="openRestoreModal()" class="btn-tool btn-restore" title="Upload and recover database file">
+            ♻️ Restore DB
+        </button>
+        
+        <a href="{{ url_for('export_excel', search_query=search_query, model_filter=selected_model, property_filter=selected_property) }}" class="btn-tool btn-export" title="Export current report to Excel">
+            📊 Export Excel
+        </a>
+    </div>
+</div>
 
 <!-- Filter & Search Card -->
 <div class="card" style="max-width:100%; margin-bottom:20px;">
@@ -91,7 +139,7 @@
                     <td>
                         <strong>{{ item.serial_number }}</strong>
                         {% if entry.attachment %}
-                        <a href="{{ url_for('download_file', filename=entry.attachment) }}" target="_blank" title="View Attachment (PO / Invoice / Photo)" style="text-decoration:none; margin-left:6px; font-size:16px;">
+                        <a href="{{ url_for('download_file', filename=entry.attachment) }}" target="_blank" title="View Attachment" style="text-decoration:none; margin-left:6px; font-size:16px;">
                             📎
                         </a>
                         {% endif %}
@@ -105,7 +153,6 @@
                     <td style="color: {{ 'green' if item.status == 'IN_STOCK' else 'red' }}; font-weight: bold;">{{ item.status }}</td>
                     <td style="text-align:center;">
                         <div style="display:flex; gap:4px; justify-content:center;">
-                            <!-- History Log Button -->
                             <button type="button" onclick="viewHistory('{{ item.id }}')" title="View Movement History Log" style="padding:4px 8px; background:transparent; border:1px solid #17a2b8; color:#17a2b8; border-radius:4px; font-size:14px; margin:0; width:auto; cursor:pointer;">📜</button>
 
                             {% if item.status == 'IN_STOCK' %}
@@ -114,7 +161,7 @@
                             <button type="button" onclick="openReenterModal('{{ item.id }}', '{{ item.serial_number }}')" title="Re-enter into Stock" style="padding:4px 8px; background:transparent; border:1px solid #28a745; color:#28a745; border-radius:4px; font-size:14px; margin:0; width:auto; cursor:pointer;">📥</button>
                             {% endif %}
                             
-                            <button type="button" onclick="openEditModal('{{ item.id }}', '{{ item.serial_number }}', '{{ item.category_id }}', '{{ item.property_id if item.property_id else '' }}', '{{ item.status }}', '{{ entry.latest_comment if entry.latest_comment != '-' else '' }}')" title="Edit Item" style="padding:4px 8px; background:transparent; border:1px solid #ffc107; color:#d39e00; border-radius:4px; font-size:14px; margin:0; width:auto; cursor:pointer;">✏️</button>
+                            <button type="button" onclick="openEditModal('{{ item.id }}', '{{ item.serial_number }}', '{{ item.category_id }}', '{{ item.property_id if item.property_id else '' }}', '{{ item.status }}', '{{ entry.latest_comment if entry.latest_comment != '-' else '' }}', '{{ entry.entrance_date }}')" title="Edit Item" style="padding:4px 8px; background:transparent; border:1px solid #ffc107; color:#d39e00; border-radius:4px; font-size:14px; margin:0; width:auto; cursor:pointer;">✏️</button>
                             
                             <button type="button" onclick="deleteSingleItem('{{ item.id }}', '{{ item.serial_number }}')" title="Delete Item" style="padding:4px 8px; background:transparent; border:1px solid #dc3545; color:#dc3545; border-radius:4px; font-size:14px; margin:0; width:auto; cursor:pointer;">🗑️</button>
                         </div>
@@ -133,6 +180,25 @@
 <!-- Single Delete Hidden Form -->
 <form id="singleDeleteForm" method="POST" style="display:none;"></form>
 
+<!-- Restore Database Modal -->
+<div id="restoreModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div class="card" style="width:90%; max-width:450px; background:#fff; padding:20px; border-radius:8px;">
+        <h3>♻️ Restore Server Database</h3>
+        <p style="font-size:13px; color:#dc3545; font-weight:bold;">
+            ⚠️ Warning: Uploading a backup database file will overwrite the current live database!
+        </p>
+        <form action="{{ url_for('restore_db') }}" method="POST" enctype="multipart/form-data">
+            <label><strong>Select Backup File (.db):</strong></label>
+            <input type="file" name="backup_file" accept=".db" required style="background:#f8f9fa; padding:8px; border:1px solid #ccc; border-radius:4px; margin-bottom:15px; width:100%; box-sizing:border-box;">
+
+            <div style="display:flex; gap:10px;">
+                <button type="submit" style="background:transparent; border:1px solid #dc3545; color:#dc3545; flex:1; padding:8px; border-radius:4px; font-weight:bold; cursor:pointer;">Confirm Restore</button>
+                <button type="button" onclick="closeRestoreModal()" style="background:transparent; border:1px solid #6c757d; color:#6c757d; flex:1; padding:8px; border-radius:4px; font-weight:bold; cursor:pointer;">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- Movement History Log Modal -->
 <div id="historyModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
     <div class="card" style="width:90%; max-width:650px; background:#fff; padding:20px; border-radius:8px; max-height:80vh; overflow-y:auto;">
@@ -150,9 +216,7 @@
                         <th>Attachment</th>
                     </tr>
                 </thead>
-                <tbody id="hist_table_body">
-                    <!-- Dynamic Rows via JavaScript -->
-                </tbody>
+                <tbody id="hist_table_body"></tbody>
             </table>
         </div>
 
@@ -168,7 +232,7 @@
         <h3>Re-enter Item to Warehouse</h3>
         <p>Re-entering device: <strong id="reenter_sn_display"></strong></p>
         <form id="reenterForm" method="POST">
-            <label><strong>Re-entry Details / Note (e.g., Returned 20m cable):</strong></label>
+            <label><strong>Re-entry Details / Note:</strong></label>
             <textarea name="comment" rows="3" placeholder="Specify return reason or quantity..."></textarea>
 
             <div style="display:flex; gap:10px; margin-top:15px;">
@@ -224,7 +288,7 @@
                 <option value="IN_STOCK">IN_STOCK</option>
                 <option value="EXITED">EXITED</option>
             </select>
-            
+
             <label><strong>🕒 Transaction Date & Time:</strong></label>
             <input type="datetime-local" name="custom_timestamp" id="edit_timestamp" style="background:#f8f9fa; padding:8px; border:1px solid #ccc; border-radius:4px; margin-bottom:12px; width:100%;">
 
@@ -240,6 +304,14 @@
 </div>
 
 <script>
+    function openRestoreModal() {
+        document.getElementById('restoreModal').style.display = 'flex';
+    }
+
+    function closeRestoreModal() {
+        document.getElementById('restoreModal').style.display = 'none';
+    }
+
     function toggleSelectAll(master) {
         const checkboxes = document.querySelectorAll('.item-checkbox');
         checkboxes.forEach(cb => cb.checked = master.checked);
@@ -326,38 +398,27 @@
         document.getElementById('exitModal').style.display = 'none';
     }
 
-    function openEditModal(id, serial, categoryId, propertyId, status, comment) {
+    function openEditModal(id, serial, categoryId, propertyId, status, comment, timestamp) {
         document.getElementById('editForm').action = '/edit_item/' + id;
         document.getElementById('edit_serial').value = serial;
         document.getElementById('edit_category').value = categoryId;
         document.getElementById('edit_property').value = propertyId;
         document.getElementById('edit_status').value = status;
         document.getElementById('edit_comment').value = comment;
+        
+        if (timestamp && timestamp !== '-' && timestamp.trim() !== '') {
+            document.getElementById('edit_timestamp').value = timestamp.replace(' ', 'T').slice(0, 16);
+        } else {
+            const now = new Date();
+            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+            document.getElementById('edit_timestamp').value = now.toISOString().slice(0, 16);
+        }
+
         document.getElementById('editModal').style.display = 'flex';
     }
 
     function closeEditModal() {
         document.getElementById('editModal').style.display = 'none';
     }
-
-    function openEditModal(id, serial, categoryId, propertyId, status, comment, timestamp) {
-    document.getElementById('editForm').action = '/edit_item/' + id;
-    document.getElementById('edit_serial').value = serial;
-    document.getElementById('edit_category').value = categoryId;
-    document.getElementById('edit_property').value = propertyId;
-    document.getElementById('edit_status').value = status;
-    document.getElementById('edit_comment').value = comment;
-    
-    // Se presente la data, la formatta per l'input HTML5
-    if (timestamp) {
-        document.getElementById('edit_timestamp').value = timestamp.replace(' ', 'T').slice(0, 16);
-    } else {
-        const now = new Date();
-        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-        document.getElementById('edit_timestamp').value = now.toISOString().slice(0, 16);
-    }
-
-    document.getElementById('editModal').style.display = 'flex';
-}
 </script>
 {% endblock %}
