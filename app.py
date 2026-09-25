@@ -4,17 +4,18 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_from_directory, send_file
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from sqlalchemy import or_, text
-import pandas as pd
+import pandas as pd 
+import io
 
 # --- ABSOLUTE BASE PATH CONFIGURATION ---
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'SECUREKY_BOLOGNA'
+app.config['SECRET_KEY'] = 'MY_SECURE_KEY2026'
 
 # Lock SQLite directly to /app/warehouse.db on the mounted host volume
 db_path = os.path.join(basedir, 'warehouse.db')
@@ -549,6 +550,192 @@ def bulk_import():
     categories = Category.query.all()
     properties = PropertyClient.query.all()
     return render_template('bulk_import.html', categories=categories, properties=properties)
+
+@app.route('/edit_category/<int:cat_id>', methods=['POST'])
+@login_required
+def edit_category(cat_id):
+    cat = Category.query.get_or_404(cat_id)
+    name = request.form.get('name', '').strip()
+    vendor = request.form.get('vendor', '').strip()
+    model = request.form.get('model', '').strip()
+
+    if name and vendor and model:
+        cat.name = name
+        cat.vendor = vendor
+        cat.model = model
+        db.session.commit()
+        flash(f'Category "{vendor} {model}" updated successfully!')
+    else:
+        flash('Error: All category fields are required!')
+
+    return redirect(url_for('manage_metadata'))
+
+@app.route('/edit_property/<int:prop_id>', methods=['POST'])
+@login_required
+def edit_property(prop_id):
+    prop = PropertyClient.query.get_or_404(prop_id)
+    new_name = request.form.get('property_name', '').strip()
+
+    if new_name:
+        existing = PropertyClient.query.filter_by(name=new_name).first()
+        if existing and existing.id != prop_id:
+            flash(f'Error: Property/Client "{new_name}" already exists!')
+        else:
+            prop.name = new_name
+            db.session.commit()
+            flash(f'Property/Client updated to "{new_name}"!')
+    else:
+        flash('Error: Property name cannot be empty!')
+
+    return redirect(url_for('manage_metadata'))
+
+
+@app.route('/change_user_password/<int:user_id>', methods=['POST'])
+@login_required
+def change_user_password(user_id):
+    target_user = User.query.get_or_404(user_id)
+    new_password = request.form.get('new_password', '').strip()
+
+    if new_password:
+        target_user.password = generate_password_hash(new_password)
+        db.session.commit()
+        flash(f'Password for user "{target_user.username}" updated successfully!')
+    else:
+        flash('Error: Password cannot be empty!')
+
+    return redirect(url_for('manage_metadata'))
+
+@app.route('/backup_db')
+@login_required
+def backup_db():
+    db_file_path = os.path.join(basedir, 'warehouse.db')
+    timestamp = rome_now().strftime('%Y%m%d_%H%M%S')
+    filename = f"warehouse_backup_{timestamp}.db"
+    return send_file(db_file_path, as_attachment=True, download_name=filename)
+
+@app.route('/restore_db', methods=['POST'])
+@login_required
+def restore_db():
+    file = request.files.get('backup_file')
+    if not file or not file.filename.endswith('.db'):
+        flash('Error: Please upload a valid .db backup file!')
+        return redirect(url_for('report'))
+
+    db_file_path = os.path.join(basedir, 'warehouse.db')
+    try:
+        db.session.remove()  # Close active database sessions
+        file.save(db_file_path)
+        flash('Database restored successfully!')
+    except Exception as e:
+        flash(f'Error restoring database: {str(e)}')
+
+    return redirect(url_for('report'))
+
+@app.route('/export_excel')
+@login_required
+def export_excel():
+    selected_model = request.args.get('model_filter', '')
+    selected_property = request.args.get('property_filter', '')
+    search_query = request.args.get('search_query', '').strip()
+
+    query = Item.query.outerjoin(Category).outerjoin(PropertyClient).outerjoin(Transaction)
+
+    if selected_model:
+        query = query.filter(Category.model == selected_model)
+    if selected_property and selected_property.isdigit():
+        query = query.filter(Item.property_id == int(selected_property))
+
+    if search_query:
+        search_pattern = f'%{search_query}%'
+        query = query.filter(
+            or_(
+                Item.serial_number.ilike(search_pattern),
+                Item.status.ilike(search_pattern),
+                Category.name.ilike(search_pattern),
+                Category.vendor.ilike(search_pattern),
+                Category.model.ilike(search_pattern),
+                PropertyClient.name.ilike(search_pattern),
+                Transaction.comment.ilike(search_pattern)
+            )
+        )
+
+    filtered_items = query.distinct().all()
+
+    export_data = []
+    for item in filtered_items:
+        entrance_tx = Transaction.query.filter_by(item_id=item.id, action='ENTRANCE').order_by(Transaction.timestamp.asc()).first()
+        exit_tx = Transaction.query.filter_by(item_id=item.id, action='EXIT').order_by(Transaction.timestamp.desc()).first()
+        latest_tx = Transaction.query.filter_by(item_id=item.id).order_by(Transaction.timestamp.desc()).first()
+
+        export_data.append({
+            'Serial Number': item.serial_number,
+            'Vendor': item.category_rel.vendor if item.category_rel else '-',
+            'Category': item.category_rel.name if item.category_rel else '-',
+            'Model': item.category_rel.model if item.category_rel else '-',
+            'Client / Property': item.owner_property.name if item.owner_property else 'Unassigned',
+            'Entrance Date': entrance_tx.timestamp.strftime('%Y-%m-%d %H:%M') if entrance_tx else '-',
+            'Exit Date': exit_tx.timestamp.strftime('%Y-%m-%d %H:%M') if (exit_tx and item.status == 'EXITED') else '-',
+            'Latest Comment': latest_tx.comment if (latest_tx and latest_tx.comment) else '-',
+            'Status': item.status
+        })
+
+    df = pd.DataFrame(export_data)
+    output = io.BytesIO()
+    
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Inventory_Report')
+    
+    output.seek(0)
+    timestamp = rome_now().strftime('%Y%m%d_%H%M%S')
+    filename = f"inventory_report_{timestamp}.xlsx"
+
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+
+@app.route('/delete_category/<int:cat_id>', methods=['POST'])
+@login_required
+def delete_category(cat_id):
+    cat = Category.query.get_or_404(cat_id)
+    # Prevent deletion if items are actively linked to this category
+    if Item.query.filter_by(category_id=cat_id).first():
+        flash(f'Error: Cannot delete category "{cat.vendor} {cat.model}" because items are currently assigned to it!')
+    else:
+        db.session.delete(cat)
+        db.session.commit()
+        flash(f'Category "{cat.vendor} {cat.model}" deleted successfully!')
+    return redirect(url_for('manage_metadata'))
+
+@app.route('/delete_property/<int:prop_id>', methods=['POST'])
+@login_required
+def delete_property(prop_id):
+    prop = PropertyClient.query.get_or_404(prop_id)
+    # Unassign any items linked to this property prior to deletion
+    assigned_items = Item.query.filter_by(property_id=prop_id).all()
+    for item in assigned_items:
+        item.property_id = None
+    
+    db.session.delete(prop)
+    db.session.commit()
+    flash(f'Property/Client "{prop.name}" deleted successfully!')
+    return redirect(url_for('manage_metadata'))
+
+@app.route('/delete_user/<int:user_id>', methods=['POST'])
+@login_required
+def delete_user(user_id):
+    if user_id == current_user.id:
+        flash('Error: You cannot delete your own logged-in user account!')
+        return redirect(url_for('manage_metadata'))
+
+    target_user = User.query.get_or_404(user_id)
+    username = target_user.username
+    db.session.delete(target_user)
+    db.session.commit()
+    flash(f'System user "{username}" deleted successfully!')
+    return redirect(url_for('manage_metadata'))
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
